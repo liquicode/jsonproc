@@ -44,7 +44,7 @@
       ✔ should refuse an empty body as a bad process
       ✔ should refuse a missing body as a bad process
       ✔ should refuse a missing check as a bad process
-      ✔ should be stopped by the step budget when the check never fails (9ms)
+      ✔ should be stopped by the step budget when the check never fails (11ms)
       ✔ should be stopped at the budget the caller named
       ✔ should never be stopped by a budget when stepped one step at a time
     The $forEach Step
@@ -159,7 +159,7 @@
       ✔ should offer a failed child to the parent $try
 
 
-  132 passing (66ms)
+  132 passing (70ms)
 ```
 
 ## Process Invariants
