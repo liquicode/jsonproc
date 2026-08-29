@@ -1,0 +1,56 @@
+{
+	"name": "@liquicode/jsonproc",
+	"version": "0.1.0",
+	"description": "A Process Runtime for JSON Documents",
+	"license": "MIT",
+	"homepage": "http://jsonproc.liquicode.com",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/liquicode/jsonproc.git"
+	},
+	"authors": [
+		{
+			"name": "Andre' G. Bowlin",
+			"email": "agbowlin@gmail.com",
+			"homepage": "http://liquicode.com"
+		}
+	],
+	"main": "src/jsonproc.js",
+	"files": [
+		"src",
+		"dist",
+		"docs/guides",
+		"license.md",
+		"readme.md",
+		"history.md"
+	],
+	"scripts": {
+		"test": "node build/run-tests.js",
+		"process-check": "node build/process-check.js",
+		"check-docs": "node build/docs-check.js",
+		"run tests": "npx @liquicode/devops --tasks .\\build\\build.tasks.js run_tests",
+		"build docs": "npx @liquicode/devops --tasks .\\build\\build.tasks.js build_docs",
+		"run webpack": "npx @liquicode/devops --tasks .\\build\\build.tasks.js run_webpack",
+		"publish version": "npx @liquicode/devops --tasks .\\build\\build.tasks.js publish_version",
+		"start new version": "npx @liquicode/devops --tasks .\\build\\build.tasks.js start_new_version"
+	},
+	"keywords": [
+		"json",
+		"process",
+		"runtime",
+		"workflow",
+		"state machine",
+		"mongo",
+		"mongodb",
+		"jsongin"
+	],
+	"dependencies": {
+		"@liquicode/jsongin": "^0.1.0"
+	},
+	"devDependencies": {
+		"@liquicode/devops": "^0.0.21",
+		"mocha": "^10.2.0",
+		"webpack": "^5.89.0",
+		"webpack-cli": "^5.1.4"
+	}
+}

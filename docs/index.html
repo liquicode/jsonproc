@@ -1,0 +1,365 @@
+<!-- index.html -->
+
+<!DOCTYPE html>
+<html>
+
+<!-- Configuration from: http://docsify.js.org -->
+
+<head>
+	<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<meta charset="UTF-8">
+
+	<!-- docsify v5 core theme. The core-dark add-on is toggled below. -->
+	<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@5/dist/themes/core.min.css">
+
+	<!-- Pick the theme before first paint to avoid a flash. The core-dark add-on
+	     applies its :root overrides unconditionally, so dark mode is "on" when
+	     this <link> is present and "off" when it is absent. The choice is
+	     remembered in localStorage and falls back to the OS preference. -->
+	<script>
+		( function ()
+		{
+			var saved = localStorage.getItem( 'jsonproc-theme' );
+			var dark = saved ? ( saved === 'dark' ) : window.matchMedia( '(prefers-color-scheme: dark)' ).matches;
+			if ( dark )
+			{
+				var link = document.createElement( 'link' );
+				link.id = 'theme-dark';
+				link.rel = 'stylesheet';
+				link.href = '//cdn.jsdelivr.net/npm/docsify@5/dist/themes/addons/core-dark.min.css';
+				document.head.appendChild( link );
+			}
+		} )();
+	</script>
+
+	<style>
+		:root
+		{
+			--theme-color: #2980B9; /* bleu */
+			/* Cover-page art: the engine image placed beside the feature list. */
+			--cover-art-opacity: 0.6;
+		}
+
+		/* ---- Theme toggle button (top-right) ---- */
+		#theme-toggle
+		{
+			position: absolute;
+			top: 12px;
+			/* Sit just inside the docsify "GitHub corner" badge (~70px wide) so the
+			   toggle does not occlude it. */
+			right: 84px;
+			z-index: 100;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 34px;
+			height: 34px;
+			padding: 0;
+			border: 1px solid var( --sidebar-border-color, var( --border-color ) );
+			border-radius: 50%;
+			background: var( --color-bg );
+			color: var( --color-text );
+			cursor: pointer;
+			opacity: 0.65;
+			transition: opacity 0.15s ease;
+		}
+		#theme-toggle:hover { opacity: 1; }
+		#theme-toggle svg { width: 18px; height: 18px; }
+		/* Show the icon for the theme currently in use. */
+		#theme-toggle .icon-moon { display: none; }
+		#theme-toggle[data-theme="dark"] .icon-sun { display: none; }
+		#theme-toggle[data-theme="dark"] .icon-moon { display: inline; }
+
+		/* ---- Content width toggle button (top-right) ---- */
+		#width-toggle
+		{
+			position: absolute;
+			top: 12px;
+			right: 124px;
+			z-index: 100;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 34px;
+			height: 34px;
+			padding: 0;
+			border: 1px solid var( --sidebar-border-color, var( --border-color ) );
+			border-radius: 50%;
+			background: var( --color-bg );
+			color: var( --color-text );
+			cursor: pointer;
+			opacity: 0.65;
+			transition: opacity 0.15s ease;
+		}
+		#width-toggle:hover { opacity: 1; }
+		#width-toggle svg { width: 18px; height: 18px; }
+		/* Show the icon for the width mode currently in use. */
+		#width-toggle .icon-narrow { display: none; }
+		#width-toggle .icon-wide { display: none; }
+		#width-toggle .icon-full { display: none; }
+		#width-toggle[data-width="narrow"] .icon-narrow { display: inline; }
+		#width-toggle[data-width="wide"] .icon-wide { display: inline; }
+		#width-toggle[data-width="full"] .icon-full { display: inline; }
+
+		/* ---- Sidebar: make group headings clear landing points ----
+		   v5 renders _sidebar.md headings as p.group-title inside li.group.
+		   When many page links expand their TOC, these headings get lost, so
+		   theme them and mark each group's extent with a guide line. */
+		.sidebar-nav .group-title
+		{
+			color: var( --theme-color );
+			font-weight: 700;
+			font-size: 0.82rem;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+			padding-bottom: 0.3em;
+			margin-bottom: 0.4em;
+			border-bottom: 1px solid var( --sidebar-border-color, var( --border-color ) );
+		}
+		/* A left guide line marks a group's extent amid its children. */
+		.sidebar-nav li > p.group-title + ul
+		{
+			border-left: 2px solid var( --sidebar-border-color, var( --border-color ) );
+			padding-left: 0.85em;
+			margin-left: 0;
+		}
+		/* Pin the active top-level group's heading while scrolling its children,
+		   so a large expanded group always shows which group you are in. */
+		.sidebar-nav > ul > li.group > p.group-title
+		{
+			position: sticky;
+			top: 0;
+			z-index: 2;
+			margin-top: 0;
+			padding-top: 0.4em;
+			background: var( --sidebar-bg, var( --color-bg ) );
+		}
+		/* Tint the expanded group that holds the current page, so the whole
+		   section you are in stands out from the rest of the sidebar. */
+		.sidebar-nav li:has( > p.group-title ):has( .active )
+		{
+			background: color-mix( in srgb, var( --theme-color ) 6%, transparent );
+			border-radius: 6px;
+		}
+		/* The current page link: a bold row with a colored left accent and a
+		   stronger tint, layered over its group's lighter tint. */
+		.sidebar-nav li.active:has( > a )
+		{
+			background: color-mix( in srgb, var( --theme-color ) 14%, transparent );
+			border-radius: 4px;
+			box-shadow: inset 3px 0 0 var( --theme-color );
+		}
+		.sidebar-nav li.active > a
+		{
+			font-weight: 700;
+		}
+
+		/* ---- Cover page: engine image beside the feature list ----
+		   A flex row: the art container has a fixed height; the image scales
+		   to fill that height, with width auto-scaled to preserve aspect ratio.
+		   The row is centered and shrinks to fit. */
+		.cover-features
+		{
+			display: flex;
+			align-items: stretch;
+			justify-content: center;
+			gap: 1.5em;
+			margin: 0 auto;
+			width: max-content;
+			max-width: 100%;
+		}
+		.cover-art
+		{
+			height: 14em;
+			opacity: var( --cover-art-opacity );
+			border-radius: 8px;
+		}
+		.cover-art img
+		{
+			height: 100%;
+			width: auto;
+			display: block;
+		}
+		.cover-feature-list
+		{
+			margin: 0;
+			padding: 0;
+			text-align: center;
+			list-style: none;
+		}
+		.cover-feature-list li
+		{
+			list-style: none;
+			margin: 0.25em 0;
+		}
+		/* A generated marker sits in the text flow, so it centers with the words
+		   instead of hanging in the margin the way a list-style bullet does. */
+		.cover-feature-list li::before
+		{
+			content: "▸ ";
+			color: var( --theme-color );
+		}
+	</style>
+
+</head>
+
+<!-- sidebar-chevron-right puts expand/collapse arrows on sidebar page links. -->
+<body class="sidebar-chevron-right">
+	<div id="app"></div>
+
+	<button id="theme-toggle" type="button" aria-label="Toggle light or dark theme" title="Toggle theme">
+		<svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>
+		<svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+	</button>
+
+	<button id="width-toggle" type="button" aria-label="Toggle content width" title="Toggle content width">
+		<!-- Narrow icon: three columns (72ch) -->
+		<svg class="icon-narrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>
+		<!-- Wide icon: two columns (95ch) -->
+		<svg class="icon-wide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="2" ry="2"></rect><line x1="12" y1="3" x2="12" y2="21"></line></svg>
+		<!-- Full icon: single rectangle (100%) -->
+		<svg class="icon-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="2" ry="2"></rect></svg>
+	</button>
+
+	<script>
+		window.$docsify = {
+			coverpage: true,
+			loadSidebar: true,
+			// Resolve links relative to the file they appear in, so that the same link
+			// works both on this site and when the file is read on GitHub.
+			// Note: _sidebar.md links must be root-absolute (/guides/...) to survive this.
+			relativePath: true,
+			// The readme is published to both the repo root (for GitHub) and
+			// docs/external/ (as this site's homepage). Its links are root-absolute
+			// /docs/... so they resolve from the repo root on GitHub. Here, strip the
+			// docs/ prefix so the same /docs/... links route within the site.
+			// The _sidebar.md alias keeps one global sidebar: with relativePath, v5
+			// loads _sidebar.md from each page's own folder, so without this the
+			// homepage (external/readme.md) and every nested page 404 on their sidebar.
+			alias: {
+				'/docs/(.*)': '/$1',
+				'/.*/_sidebar.md': '/_sidebar.md',
+			},
+			subMaxLevel: 2,
+			auto2top: true,
+			// themeColor moved to the --theme-color CSS variable above (deprecated in v5).
+			notFoundPage: '_404.md',
+
+			repo: 'liquicode/jsonproc',
+			homepage: 'external/readme.md',
+			name: 'jsonproc',
+
+			// Full-text search (official v5 plugin).
+			search: {
+				paths: 'auto',
+				placeholder: 'Search the docs...',
+				noData: 'No results found.',
+				depth: 3,
+				namespace: 'jsonproc',
+			},
+		}
+	</script>
+
+	<script src="//cdn.jsdelivr.net/npm/docsify@5"></script>
+
+	<!-- Full-text search. -->
+	<script src="//cdn.jsdelivr.net/npm/docsify@5/dist/plugins/search.min.js"></script>
+
+	<script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-bash.min.js"></script>
+	<script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-javascript.min.js"></script>
+	<script src="//cdn.jsdelivr.net/npm/docsify-copy-code"></script>
+
+	<!-- Theme toggle: add/remove the core-dark stylesheet and remember the choice. -->
+	<script>
+		( function ()
+		{
+			var DARK_HREF = '//cdn.jsdelivr.net/npm/docsify@5/dist/themes/addons/core-dark.min.css';
+			function is_dark() { return !!document.getElementById( 'theme-dark' ); }
+			function sync_icon()
+			{
+				var btn = document.getElementById( 'theme-toggle' );
+				if ( btn ) { btn.setAttribute( 'data-theme', is_dark() ? 'dark' : 'light' ); }
+			}
+			function set_theme( dark )
+			{
+				var link = document.getElementById( 'theme-dark' );
+				if ( dark && !link )
+				{
+					link = document.createElement( 'link' );
+					link.id = 'theme-dark';
+					link.rel = 'stylesheet';
+					link.href = DARK_HREF;
+					document.head.appendChild( link );
+				}
+				else if ( !dark && link )
+				{
+					link.remove();
+				}
+				localStorage.setItem( 'jsonproc-theme', dark ? 'dark' : 'light' );
+				sync_icon();
+			}
+			document.addEventListener( 'DOMContentLoaded', sync_icon );
+			document.addEventListener( 'click', function ( event )
+			{
+				if ( event.target.closest( '#theme-toggle' ) )
+				{
+					set_theme( !is_dark() );
+				}
+			} );
+		} )();
+	</script>
+
+	<!-- Content width toggle: cycle through narrow (72ch) → wide (95ch, default) → full (100%) modes. -->
+	<script>
+		( function ()
+		{
+			// Three states: 'narrow' (72ch), 'wide' (95ch, default), 'full' (100%)
+			var currentMode = 'wide';
+			var MODES = [ 'narrow', 'wide', 'full' ];
+			var WIDTHS = { narrow: '72ch', wide: '95ch', full: '100%' };
+
+			function sync_icon()
+			{
+				var btn = document.getElementById( 'width-toggle' );
+				if ( btn ) { btn.setAttribute( 'data-width', currentMode ); }
+			}
+
+			function set_mode( mode )
+			{
+				currentMode = mode;
+				// Apply the CSS variable directly to :root
+				document.documentElement.style.setProperty( '--content-max-width', WIDTHS[ mode ] );
+				localStorage.setItem( 'jsonproc-width', mode );
+				sync_icon();
+			}
+
+			function next_mode()
+			{
+				var idx = MODES.indexOf( currentMode );
+				return MODES[ ( idx + 1 ) % MODES.length ];
+			}
+
+			document.addEventListener( 'DOMContentLoaded', function ()
+			{
+				var saved = localStorage.getItem( 'jsonproc-width' );
+				if ( saved && MODES.indexOf( saved ) !== -1 ) { currentMode = saved; }
+				// Apply whichever mode is in effect - the saved one or the default - so the
+				// icon and the rendered width always agree, including on a first visit.
+				document.documentElement.style.setProperty( '--content-max-width', WIDTHS[ currentMode ] );
+				sync_icon();
+			} );
+
+			document.addEventListener( 'click', function ( event )
+			{
+				if ( event.target.closest( '#width-toggle' ) )
+				{
+					set_mode( next_mode() );
+				}
+			} );
+		} )();
+	</script>
+
+</body>
+
+</html>

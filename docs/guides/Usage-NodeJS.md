@@ -1,0 +1,102 @@
+# @liquicode/jsonproc
+
+
+# NodeJS Usage
+
+
+## Install jsonproc with NPM
+
+```bash
+npm install --save @liquicode/jsonproc
+```
+
+`jsonproc` has one runtime dependency, and it is
+  [`@liquicode/jsongin`](http://jsongin.liquicode.com).
+Every expression a step computes and every criteria a step tests is evaluated by that engine,
+  so installing `jsonproc` installs it too.
+
+
+## Include jsonproc in your NodeJS Project
+
+The module's default export is a ready-to-use runtime ***instance***, not a factory:
+
+```js
+const jsonproc = require( '@liquicode/jsonproc' );
+
+console.log( jsonproc.Library.name + ', v' + jsonproc.Library.version );
+```
+
+This instance runs against jsongin's own default engine and has logging turned off.
+For most uses it is all you need.
+
+
+## Create an Instance with Custom Settings
+
+To configure the runtime, call the `NewJsonproc( Settings )` factory method:
+
+```js
+let Settings = { jsongin: null, OpLog: null, OpError: null };
+
+const jsonproc = require( '@liquicode/jsonproc' ).NewJsonproc( Settings );
+```
+
+Each instance carries its own settings and its own step operator registry, so you can hold more
+  than one at a time.
+
+> ***Note*** : the module export is an instance, so
+  `require( '@liquicode/jsonproc' )( Settings )` does not work. Use `NewJsonproc( Settings )`.
+
+
+## Customize jsonproc Behavior with Settings
+
+```js
+// docs-check: skip - the shape of the settings object.
+let Settings = {
+	jsongin: null, // The jsongin engine to evaluate against. Null takes jsongin's default instance.
+	OpLog: null, // A function to call (such as console.log) to output OpLog messages.
+	OpError: null, // A function to call (such as console.error) to output OpError messages.
+}
+```
+
+All three default to `null`.
+
+
+## Running Against Your Own Engine
+
+***The engine is a setting because an engine carries its operator registries.***
+A host which registered an expression operator of its own holds an engine which is not the
+  default one, and a process has to be able to compute with it:
+
+```js
+const jsongin = require( '@liquicode/jsongin' ).NewJsongin( { OpLog: console.log } );
+const jsonproc = require( '@liquicode/jsonproc' ).NewJsonproc( { jsongin: jsongin } );
+
+jsonproc.jsongin === jsongin
+```
+
+Naming no engine takes jsongin's default instance, which is what a host that registered nothing
+  wants.
+
+
+## What the Runtime Exposes
+
+Beyond the four functions described in the [Library Guide](./Library-Guide.md), a runtime
+  instance carries a few fields worth knowing about:
+
+| **Field**         | **Description**                                                       |
+|-------------------|------------------------------------------------------------------------|
+| `Library`         | The library's `name`, `url`, and `version`.                           |
+| `Settings`        | The settings this instance was created with.                          |
+| `NewJsonproc`     | The factory method, so any instance can make another.                 |
+| `jsongin`         | The engine this runtime evaluates against.                            |
+| `StepOperators`   | The registered step operators, keyed by name.                         |
+
+The registry is a plain object, which is what makes it possible to add step operators of your
+  own. See [Operator Authoring](./Operator-Authoring.md).
+
+
+## See Also
+
+- [Browser Usage](./Usage-Browser.md)
+- [Library Guide](./Library-Guide.md)
+- [The Process Runtime](./jsonproc/Process.md)
