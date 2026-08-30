@@ -42,6 +42,18 @@ module.exports = {
 
 	run_tests: [
 
+		// Check the type declaration and the ESM wrapper against the running runtime.
+		// Both are written by hand and both drift silently: nothing regenerates when a
+		// function is added, and nothing complains either. Runs first because it is fast
+		// and because a surface mismatch is worth knowing before a full test run.
+		{
+			$Shell: {
+				command: 'node build/types-check.js',
+				out: { console: true },
+				err: { console: true },
+			}
+		},
+
 		// Run tests and capture the output.
 		// Runs the unit tests and the invariant check as two separate invocations, each
 		// with its own heading and summary. The shared script is also what `npm test`

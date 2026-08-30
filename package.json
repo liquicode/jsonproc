@@ -16,9 +16,21 @@
 		}
 	],
 	"main": "src/jsonproc.js",
+	"types": "./types/jsonproc.d.ts",
+	"exports": {
+		".": {
+			"types": "./types/jsonproc.d.ts",
+			"import": "./src/jsonproc.mjs",
+			"require": "./src/jsonproc.js",
+			"default": "./src/jsonproc.js"
+		},
+		"./dist/*": "./dist/*",
+		"./package.json": "./package.json"
+	},
 	"files": [
 		"src",
 		"dist",
+		"types",
 		"docs/guides",
 		"license.md",
 		"readme.md",
@@ -27,6 +39,7 @@
 	"scripts": {
 		"test": "node build/run-tests.js",
 		"process-check": "node build/process-check.js",
+		"types-check": "node build/types-check.js",
 		"check-docs": "node build/docs-check.js",
 		"run tests": "npx @liquicode/devops --tasks .\\build\\build.tasks.js run_tests",
 		"build docs": "npx @liquicode/devops --tasks .\\build\\build.tasks.js build_docs",

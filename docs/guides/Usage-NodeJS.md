@@ -30,6 +30,48 @@ This instance runs against jsongin's own default engine and has logging turned o
 For most uses it is all you need.
 
 
+## Import jsonproc as an ES Module
+
+The library is CommonJS, and an ESM wrapper ships beside it so that both import forms work:
+
+```mjs
+import jsonproc from '@liquicode/jsonproc';
+import { Start, Step, Execute, Resume } from '@liquicode/jsonproc';
+```
+
+***There is one runtime, whichever way you load it.***
+`require()` and `import` reach the same object, because the wrapper re-exports the CommonJS
+  module rather than being a second build of it.
+That matters because the step operator registry belongs to an instance, so an operator
+  registered through one handle has to be visible through the other.
+A separate ESM build would have given you two runtimes which disagreed.
+
+***`OpLog` and `OpError` are not named exports.***
+They are mutable settings, and a named ESM export binds once at load time — `import { OpLog }`
+  would hand back the `null` it held then and go on handing it back after you had assigned a
+  logger.
+Reach them through the default export, where an assignment lands on the runtime:
+
+```mjs
+import jsonproc from '@liquicode/jsonproc';
+jsonproc.OpLog = function ( Message ) { console.log( Message ); };
+```
+
+Everything else on the runtime is a named export, `jsongin` included — an engine is chosen when
+  the runtime is built rather than assigned onto a running one.
+
+
+## Use jsonproc from TypeScript
+
+A hand-written declaration ships in `types/`, so an editor completes the runtime's surface and a
+  TypeScript project compiles against it with no `@types` package to install.
+
+***TypeScript is supported and never required.***
+There is no TypeScript in the source and no compiler in the build.
+`npm run types-check` compares the declaration and the ESM wrapper against the runtime which is
+  actually running, so neither one can quietly fall behind it.
+
+
 ## Create an Instance with Custom Settings
 
 To configure the runtime, call the `NewJsonproc( Settings )` factory method:
