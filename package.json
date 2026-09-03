@@ -3,6 +3,9 @@
 	"version": "0.1.0",
 	"description": "A Process Runtime for JSON Documents",
 	"license": "MIT",
+	"engines": {
+		"node": ">=10.4.0"
+	},
 	"homepage": "http://jsonproc.liquicode.com",
 	"repository": {
 		"type": "git",
