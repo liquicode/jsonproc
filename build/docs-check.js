@@ -40,6 +40,10 @@
 		operators   Every registered operator must carry an /*md block describing its usage,
 		            so that an operator cannot be added without being written up.
 
+		llm         Every registered step operator must be named in
+		            docs/guides/Llm-Context.md, which is hand written and would otherwise
+		            fall behind the engine without anything saying so.
+
 		examples    Every ```js block is executed against the engine, and the claims its
 		            comments make are checked:
 
@@ -761,6 +765,54 @@ function check_examples( Files )
 
 
 //---------------------------------------------------------------------
+// ***The LLM context document must name every step operator.***
+//
+// `docs/guides/Llm-Context.md` is a derivation: it exists to be pasted into a model prompt
+// whole, in place of a retrieval over a documentation corpus, because a question about what
+// a process should do is not a question any one page answers. A hand written derivation is
+// denser and better ordered than anything generated from the guides, and the price of
+// writing it by hand is that it can fall behind the engine silently. This is that price
+// paid: an operator added without being written up fails the build.
+
+function check_llm_context()
+{
+	let page = LIB_PATH.join( DOCS, 'guides', 'Llm-Context.md' );
+	let findings = [];
+	let checked = 0;
+
+	if ( !LIB_FS.existsSync( page ) )
+	{
+		findings.push( {
+			Path: LIB_PATH.relative( REPO, page ),
+			Detail: 'The LLM context document is missing.',
+		} );
+		return { Checked: 0, Unit: 'operators', Findings: findings };
+	}
+
+	let text = LIB_FS.readFileSync( page, 'utf8' );
+	let names = Object.keys( LIB_JSONPROC.StepOperators );
+
+	for ( let index = 0; index < names.length; index++ )
+	{
+		checked++;
+
+		// ***Written as `$name` with a word boundary after it***, so that a document which
+		// mentions a longer operator is not credited with a shorter one sharing its prefix.
+		let pattern = new RegExp( '\\' + names[ index ] + '(?![A-Za-z0-9_])' );
+		if ( pattern.test( text ) ) { continue; }
+
+		findings.push( {
+			Path: LIB_PATH.relative( REPO, page ),
+			Detail: names[ index ] + ' is a registered step operator and the LLM context document'
+				+ ' does not mention it.',
+		} );
+	}
+
+	return { Checked: checked, Unit: 'operators', Findings: findings };
+}
+
+
+//---------------------------------------------------------------------
 function report( Name, Result )
 {
 	let count = Result.Findings.length;
@@ -805,6 +857,7 @@ function main()
 	failures += report( 'anchors', check_anchors( all_files ) );
 	failures += report( 'orphans', check_orphans( doc_files ) );
 	failures += report( 'operators', check_operator_blocks() );
+	failures += report( 'llm', check_llm_context() );
 	failures += report( 'examples', check_examples( all_files ) );
 	console.log( '' );
 
