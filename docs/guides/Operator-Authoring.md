@@ -3,166 +3,165 @@
 
 # Operator Authoring
 
-Every step operator `jsonproc` supports is a self contained module which is registered into a
-  runtime instance by name.
-Nothing about that registry is private, so you can add step operators of your own the same way
-  the built-in ones are added.
+Each step operator is an object registered by name in a runtime's `StepOperators`.
+You can add step operators of your own.
 
-This document describes the step operator contract and how to register one.
-For the query, expression, update, stage and accumulator operators a step ***computes*** with,
-  see jsongin's own
-  [Operator Authoring](http://jsongin.liquicode.com/#/guides/Operator-Authoring.md).
+This page covers step operators.
+For the query, expression, update, stage and accumulator operators a step computes with, see
+  jsongin's [Operator Authoring](http://jsongin.liquicode.com/#/guides/Operator-Authoring.md).
 
 
-## The Shape of a Step Operator Module
-
-A step operator module exports a ***factory function*** which takes the runtime and returns an
-  operator object:
+## A Step Operator
 
 ```js
-// docs-check: skip - an operator module, shown as it appears in its own file.
-'use strict';
-/*md
+const runtime = jsonproc.NewJsonproc();
 
-## Operators > Step > $myStep
+runtime.StepOperators.$flag = {
+	ArgTypes: 's',
+	Step: function ( State, Args, Scope, Position )
+	{
+		let state = jsongin.SafeClone( State );
+		jsongin.SetValue( state, Args, true );
+		return { Action: 'next', State: state };
+	},
+};
 
-Usage: `$myStep: { ... }`
+const flagging = { Name: 'Flagging', Steps: [ { $flag: 'checked' } ] };
+let flagged = runtime.Execute( flagging, runtime.Start( flagging, { n: 1 } ) );
+flagged.State		// returns { n: 1, checked: true }
+```
 
-What it does, and an example of it.
+| **Field**  | **Meaning**                                                                   |
+|------------|--------------------------------------------------------------------------------|
+| `Step`     | Required. The function which runs the step.                                   |
+| `ArgTypes` | Optional. A string of [`ShortType`](http://jsongin.liquicode.com/#/guides/jsongin/ShortType.md) letters. A step whose argument has another type fails with `StepFailed` before `Step` is called. |
+| `Repeats`  | Optional. `true` makes the operator a loop; see [Loops](#loops).              |
+| `Catches`  | Optional. Makes the operator a handler; see [Handlers](#handlers).            |
 
-*/
+The built-in operators are written as modules which export a factory taking the runtime:
 
+```js
+// docs-check: skip - an operator module in a file of your own.
 module.exports = function ( jsonproc )
 {
 	const jsongin = jsonproc.jsongin;
-
-	let operator =
-	{
-		Engine: jsonproc,
-
-		Step: function ( State, Args, Scope, Position )
-		{
-			// ...
-			return { Action: 'next' };
-		},
+	return {
+		ArgTypes: 'o',
+		Step: function ( State, Args, Scope, Position ) { return { Action: 'next' }; },
 	};
-
-	return operator;
 };
 ```
 
-The factory is called once per runtime instance, so the operator closes over the runtime it
-  belongs to — and, through it, the engine that runtime evaluates against.
-
-***The `/*md` block is not optional.***
-`npm run check-docs` fails an operator file which has none, so an operator cannot be added
-  without being written up.
+Use `jsonproc.jsongin` inside the operator, so it computes with the same engine as the runtime.
 
 
-## The Step Contract
+## The Step Function
 
 ```
 Step: function ( State, Args, Scope, Position )
 ```
 
-Carries out one step of a process and says what the runtime should do next.
-See [The Process Runtime](./jsonproc/Process.md) for the run value these move through.
+- `State` is the document the process is working on. ***Do not change it.*** Clone it and return
+  the copy.
+- `Args` is the value the step gave the operator.
+- `Scope` is the run's variables. Pass it to jsongin; see [Scope](#scope).
+- `Position.Reentry` is the branch element the cursor just left, such as `[ 'Do', 3 ]`, or `null`.
+  Only a loop needs it.
 
-- `State` is the document the process is working on.
-- `Args` is whatever the step wrote as the operator's value.
-- `Scope` is the frame chain the step is evaluated against. Pass it along; see below.
-- `Position` is a document carrying `Reentry`: the branch element the cursor climbed out of,
-  such as `[ 'Do', 3 ]`, or `null` when the step is being reached rather than returned to.
-  Only a repeating operator needs it.
+`Step` returns an ***outcome*** document naming an `Action`:
 
-***A step operator returns an outcome rather than a value***, which is the one way this kind
-  differs from every other operator in the family.
-The outcome is a document naming an `Action`:
+| **Action** | **Means**                           | **Also reads**                            |
+|------------|-------------------------------------|-------------------------------------------|
+| `next`     | move to the next step               | `State`, if the step changed it           |
+| `enter`    | run a branch of this step           | `Branch` (required), `Iteration`, `State` |
+| `wait`     | suspend until `Resume()`            | `Waiting` (required)                      |
+| `halt`     | end the run with `Status: 'done'`   | `Result`                                  |
 
-| **Action** | **Means**                          | **Also reads**                            |
-|------------|------------------------------------|-------------------------------------------|
-| `next`     | the step is done, move on          | `State`, when the step changed it         |
-| `enter`    | descend into a branch of this step | `Branch` (required), `Iteration`, `State` |
-| `wait`     | suspend until the host answers     | `Waiting` (required)                      |
-| `halt`     | the run is over                    | `Result`                                  |
+`Branch` names an array of steps in `Args`, such as `'Then'`. Naming one which is not there fails
+  the run with `NoSuchStep`.
+`Iteration` is a number, and makes the cursor element `[ Branch, Iteration ]`.
+`Waiting` should be `{ Name, With, Into }`; `Resume()` writes its result at `Waiting.Into`.
 
-Anything else — an outcome which is not a document, or an `Action` outside those four — fails
-  the run with `StepFailed`.
-
-***An operator may name the code it fails with*** by setting `Code` on the error it throws.
-A fault the operator can see in the process document rather than in the state should say
-  `BadProcess`, so that a caller is told which of the two it is looking at.
-An operator which throws an ordinary `Error` gets `StepFailed`.
-
-***An operator may not name one of the uncatchable codes.***
-`BadProcess`, `BadRun`, `NoSuchStep`, `UnknownOperator`, `ResumeNotWaiting` and
-  `StepLimitExceeded` halt a run whatever wraps it, and the line between an error and a bug is
-  exactly that list — so a process document must not be able to cross it from the inside.
-`$throw` refuses to name one.
+An outcome which is not a document, an unknown `Action`, a `Branch` which is not a string, or a
+  `Waiting` which is not a document fails the run with `StepFailed`.
 
 
-## The Scope Contract
+## Failing
 
-***An operator which does not pass its `Scope` along loses every variable underneath it.***
-Nothing goes wrong at the time. It goes wrong later, when somebody writes a `$$name` inside
-  that one operator, and it reads as "`$map` is broken" rather than as "your step dropped the
-  scope".
+Throw to fail the step. The runtime catches it and fails the run at that step.
 
-Two rules apply here:
-
-1. Every `jsongin.Evaluate(` call passes three arguments. Two means the caller is making a
-   fresh root scope by accident, which is exactly how a variable goes missing.
-2. A step operator declares its `Step` with a `Scope`. An operator which needs the cursor takes
-   `Position` ***after*** it, which is why `$while`, `$forEach`, `$try` and `$throw` carry the
-   scope in the third slot rather than the last.
-
-***Bind names with `Scope.Child( { name: value } )`, never by writing into `Scope.Variables`.***
-A frame is immutable once made, and a child frame is what a binding is.
-If your operator binds a name the caller chose, put it through
-  `jsongin.Scope.RequireName( Name, '$myStep' )` first, so that a name which could be mistaken
-  for a system variable is refused rather than shadowing one.
-
-> ***A loop's iteration variable is written into the state, not bound as a `$$name`.***
-  `Query()` takes no scope, so a `$$name` would be invisible to exactly the `$when` a loop body
-  most often wants to make. `$forEach` writes to `As` for that reason, and a step operator of
-  your own which offers the caller a value should do the same.
-
-See [Scope](http://jsongin.liquicode.com/#/guides/jsongin/Scope.md) for the object itself.
-
-
-## Reporting Problems
-
-Operators do not print anything directly. They report through the runtime's log handlers, which
-  are `null` unless the caller configured them.
+The code is `StepFailed`, unless the error has a string `Code` property.
+Use `BadProcess` for a mistake in the process document, such as a missing argument.
 
 ```js
-// docs-check: skip - shown as it appears inside an operator.
-try
-{
-	// An explanation: the operation completed, but not as expected.
-	if ( jsonproc.OpLog ) { jsonproc.OpLog( `$myStep: nothing to iterate at [${Path}].` ); }
-}
-catch ( error )
-{
-	// An error: the operation cannot complete.
-	if ( jsonproc.OpError ) { jsonproc.OpError( `Step.$myStep: ${error.message}` ); }
-	throw error;
-}
+// docs-check: skip - inside a Step function.
+let error = new Error( '$flag requires a field name.' );
+error.Code = 'BadProcess';
+throw error;
 ```
 
-Always guard the call with `if ( jsonproc.OpLog )`.
-Always prefix the message with your operator's name.
-When you catch an error to log it, ***rethrow it***; the log is an addition to the throw, not a
-  replacement for it.
+***Codes the runtime never catches*** - `BadProcess`, `BadRun`, `NoSuchStep`,
+  `UnknownOperator`, `ResumeNotWaiting` and `StepLimitExceeded` - pass every `$try`, whichever
+  operator throws them.
+Use them only for faults a process should not be able to handle.
 
-> ***The runtime catches what an operator throws.*** Nothing in `jsonproc` throws out to the
-  caller; a throw becomes a failed run at the cursor which raised it. That is the point of the
-  design, and it is invariant 5.
+
+<a id="loops"></a>
+## Loops
+
+With `Repeats: true`, the cursor returns to the operator each time a branch it entered ends.
+`Position.Reentry` is then the element it left, and `null` when the step is first reached.
+Return `enter` to run the branch again, or `next` to finish.
+
+Enter with an `Iteration` to keep a pass number in the cursor, as `$forEach` does.
+
+
+<a id="handlers"></a>
+## Handlers
+
+`Catches: { From: 'Do', Into: 'Catch' }` makes the operator a handler, as `$try` is.
+When a catchable failure happens inside the `From` branch, the run continues at the first step of
+  the `Into` branch.
+If `Args.As` is a string, the error `{ Code, Message, Cursor }` is written to that field first.
+A missing or empty `Into` branch does not catch, and the failure moves outward.
+
+The operator itself only enters `From`.
+
+
+<a id="scope"></a>
+## Scope
+
+Evaluate expressions with a scope for the current document:
+
+```js
+// docs-check: skip - inside a Step function.
+let value = jsongin.Evaluate( State, Args.Value, Scope.ForDocument( State ) );
+```
+
+***Always pass a scope to `Evaluate()`.*** Without one, `$$NOW` is the current time rather than
+  the run's, and the run's variables are missing.
+
+To add a variable, use `Scope.Child( { name: value } )`. A scope cannot be changed.
+If the caller chooses the name, check it with `jsongin.Scope.RequireName( Name, '$myStep' )`.
+
+`Query()` takes no scope.
+To make a value visible to a `Check`, write it into the state, as `$forEach` does with `As`.
+
+See [Scope](http://jsongin.liquicode.com/#/guides/jsongin/Scope.md).
+
+
+## Logging
+
+A runtime's `OpLog` and `OpError` are `null` unless set.
+Check before calling, and start the message with the operator's name:
+
+```js
+// docs-check: skip - inside a Step function.
+if ( jsonproc.OpLog ) { jsonproc.OpLog( `$flag: nothing to flag.` ); }
+```
 
 
 ## Registering an Operator
-
-Add it to the registry on a runtime instance:
 
 ```js
 // docs-check: skip - registers an operator from a file of your own.
@@ -171,12 +170,13 @@ const jsonproc = require( '@liquicode/jsonproc' ).NewJsonproc();
 jsonproc.StepOperators.$myStep = require( './my-operators/myStep' )( jsonproc );
 ```
 
-The registry is a plain object keyed by operator name, so this is all registration amounts to.
-Replacing an existing key overrides that operator for the instance.
+Using an existing name replaces that operator.
 
-Because the registry belongs to the instance, an operator you add to one runtime is not visible
-  to another. Use `NewJsonproc()` to make an instance to extend, and leave the module's default
-  instance alone if other code shares it.
+***Each runtime has its own registry.*** An operator added to one is not visible to another.
+Add operators to a runtime made with `NewJsonproc()`, not to the shared default one.
+
+An operator file under `src/Operators/` in this repository must also contain a `/*md` comment
+  block describing it; `npm run check-docs` fails without one.
 
 
 ## See Also

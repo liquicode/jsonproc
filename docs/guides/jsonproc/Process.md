@@ -4,8 +4,9 @@
 # The Process Runtime
 
 A ***process*** is a JSON document describing work.
-A ***run*** is a JSON value describing how far that work has got.
-The engine is a pure function from one run to the next, and holds nothing between calls.
+A ***run*** is a JSON value recording how far that work has got.
+Each function takes a process and a run and returns a new run. The runtime keeps nothing
+  between calls.
 
 ```js
 // docs-check: skip
@@ -16,17 +17,15 @@ run = jsonproc.Resume( Process, run, Result );
 run = jsonproc.Resume( Process, run, undefined, Error );
 ```
 
-***The process is passed alongside the run, never carried inside it.***
-They are stored separately, and a caller who keeps a run must keep track of which process it
-  belongs to.
-The run carries the process's `Name` as a stamp, so that stepping a stored run against the
-  wrong process fails at the first call instead of computing a wrong answer quietly.
+***Pass the process with every call.*** The run does not contain it.
+Keep track of which process a stored run belongs to.
+The run records the process's `Name`, and a call with a process of a different name fails with
+  `BadRun`.
 
-This is jsonproc's own language and not MongoDB's.
-What an expression computes and what a query matches are still MongoDB's - they are still
-  [`Evaluate()`](http://jsongin.liquicode.com/#/guides/jsongin/Evaluate.md) and [`Query()`](http://jsongin.liquicode.com/#/guides/jsongin/Query.md), at parity, unchanged.
-Only the step sequencing, the branching, the run value, the suspension and the error
-  propagation are invented here.
+Expressions and queries inside a step are jsongin's
+  [`Evaluate()`](http://jsongin.liquicode.com/#/guides/jsongin/Evaluate.md) and
+  [`Query()`](http://jsongin.liquicode.com/#/guides/jsongin/Query.md), and follow MongoDB.
+The steps, branches, runs, suspension and error handling are jsonproc's own.
 
 
 ## A Process
@@ -49,12 +48,11 @@ const checkout = {
 };
 ```
 
-A process is a ***document***, not a bare array, so it has somewhere to keep its name.
+A process is a document with a `Steps` array. `Name` is optional.
 
-Each step is ***one document with one step operator***, the way a pipeline stage is.
-An operator taking more than one argument ***nests*** them, which is what MongoDB does
-  everywhere - `$lookup`, `$bucket`, `$let` - and what keeps "one key, one operator" true.
-Argument names are PascalCase because these are jsonproc operators rather than MongoDB ones.
+Each step is ***one document with one step operator***, like a pipeline stage.
+An operator with several arguments takes them as one nested document.
+Argument names are PascalCase.
 
 See [Step Operators](./Step-Operators.md) for what each one does.
 
@@ -70,25 +68,26 @@ run.Cursor		// returns [ 0 ]
 run.State		// returns { sub: 100, tax: 8 }
 ```
 
+`Start()` copies `Input` into `State`, so the process never writes to your document.
+`Input` may be left out, which starts with an empty state. Any value other than a document fails
+  with `BadRun`.
+
 | Field | Meaning |
 |---|---|
-| `Process` | The `Name` of the process this run belongs to, or `null` for a process with no name. |
-| `Status`  | `ready` - a step is waiting to run. `waiting` - suspended on a `$call`. `done` - halted with a `Result`. `failed` - halted with an `Error`. |
-| `Cursor`  | The position of the ***next*** step. `[ 1, 'Then', 0 ]` is the first step of the `Then` branch of step 1. A loop writes its branch element as a pair, so `[ 1, [ 'Do', 3 ], 0 ]` is the first step of the fourth pass. An empty cursor means the process is over. |
-| `State`   | The document the process is working on. `Start()` sets it from `Input`, cloned. |
-| `Scope`   | The variable bindings, in the stored form [`Scope.ToJSON()`](http://jsongin.liquicode.com/#/guides/jsongin/Scope.md) writes. |
-| `Waiting` | Present only while `Status` is `waiting`. `{ Name, With, Into }`. |
-| `Result`  | Present only when `Status` is `done` ***and there is a value***. |
-| `Error`   | Present only when `Status` is `failed`. `{ Code, Message, Cursor }`. |
-| `Reentry` | Present only while the cursor has just climbed back into a loop. The branch element it came out of, which is how a loop learns which pass just ended. |
+| `Process` | The `Name` of the process, or `null` for a process with no name. |
+| `Status`  | `ready` - the next step can run. `waiting` - suspended on a `$call`. `done` - finished. `failed` - stopped with an `Error`. |
+| `Cursor`  | The position of the ***next*** step. `[ 1, 'Then', 0 ]` is the first step of the `Then` branch of step 1. Inside a loop the branch is a pair, so `[ 1, [ 'Do', 3 ], 0 ]` is the first step of the fourth pass. An empty cursor means the process is over. |
+| `State`   | The document the process is working on. |
+| `Scope`   | The variables, in the stored form [`Scope.ToJSON()`](http://jsongin.liquicode.com/#/guides/jsongin/Scope.md) writes. |
+| `Waiting` | Only when `Status` is `waiting`: `{ Name, With, Into }`. |
+| `Result`  | Only when `Status` is `done` ***and there is a value***. |
+| `Error`   | Only when `Status` is `failed`: `{ Code, Message, Cursor }`. |
+| `Reentry` | Only when the cursor has just returned to a loop. The branch element it left, which tells the loop which pass ended. |
 
-***The run has no methods.*** Everything on it is data.
-
-***The optional fields are left off rather than set to `undefined`.***
-That is a storage requirement and not a preference:
-  [`Format()`](http://jsongin.liquicode.com/#/guides/jsongin/Format.md) drops a field whose value is `undefined` and
-  [`Parse()`](http://jsongin.liquicode.com/#/guides/jsongin/Parse.md) does not put it back, so a run carrying `Result: undefined` would not
-  survive being written down - and a run which cannot be written down is not a run.
+A run is plain data with no methods.
+An optional field is left off rather than set to `undefined`, so the run survives
+  [`Format()`](http://jsongin.liquicode.com/#/guides/jsongin/Format.md) and
+  [`Parse()`](http://jsongin.liquicode.com/#/guides/jsongin/Parse.md).
 
 
 ## Running One
@@ -104,10 +103,9 @@ run.Waiting.With	// returns { amount: 97.2 }
 run.Waiting.Into	// returns 'receipt'
 ```
 
-***`$call` does not call.***
-The engine performs no I/O, has no dependency, and contains no `async`.
-It stops and describes what it wants; the host does the work, does the awaiting, and hands the
-  answer back.
+***`$call` does not call anything.***
+The runtime performs no I/O and has no `async`.
+Your code reads `Waiting`, does the work, and passes the answer to `Resume()`.
 
 ```js
 run = jsonproc.Resume( checkout, run, { confirmation: 'abc123' } );
@@ -118,8 +116,8 @@ run.Status		// returns 'done'
 run.Result		// returns { confirmation: 'abc123' }
 ```
 
-A call which failed is reported through the fourth parameter rather than through a fifth
-  function:
+To report that the work failed, pass `undefined` as the result and the failure as the fourth
+  argument:
 
 ```js
 let failing = jsonproc.Execute( checkout, jsonproc.Start( checkout, { sub: 100, tax: 8 } ) );
@@ -131,21 +129,18 @@ failing.Error.Message	// returns 'the card was declined'
 failing.Error.Cursor	// returns [ 2 ]
 ```
 
-A host with a code of its own may pass `{ Code: 'CardDeclined', Message: '...' }` instead.
+The failure may be an `Error`, a string, or a document `{ Code, Message }` to choose the code.
+Any fourth argument other than `undefined` is a failure, `null` included.
+`Resume()` on a run which is not `waiting` fails with `ResumeNotWaiting`.
 
 
 ## How a Step Reads Its Data
 
-Inherited from MongoDB rather than invented, which is the point of building this on jsongin:
-
-- ***`'$field'` reads the state document.***
-  The state is `$$CURRENT` and `$$ROOT`, so a bare field path is the shorthand it already is
-  everywhere else in the engine.
-- ***`'$$name'` reads a variable binding.***
-  `$let`, `$map`, `$filter` and `$reduce` behave inside a step exactly as they do anywhere.
-- ***`$$NOW` is fixed for the whole run***, not re-read per step, the way it is fixed for a
-  whole aggregation pipeline.
-  A run resumed an hour later keeps the instant it started with.
+- ***`'$field'` reads the state.*** The state is `$$CURRENT` and `$$ROOT`.
+- ***`'$$name'` reads a variable.*** `$let`, `$map`, `$filter` and `$reduce` work inside a step
+  as they do anywhere in jsongin.
+- ***`$$NOW` is fixed for the whole run.*** `Start()` reads the clock once, and a run resumed an
+  hour later still has that instant.
 
 ```js
 const stamped = { Name: 'Stamped', Steps: [ { $do: { at: '$$NOW' } } ] };
@@ -158,31 +153,16 @@ let stamped_matches = ( stamped_run.State.at.getTime() === started_at );
 stamped_matches		// returns true
 ```
 
+> ***A `Check` is a query, and a query has no variables.***
+  Inside a `Check`, even within `$expr`, `$$NOW` is the time the check runs, not the run's
+  instant. Copy it into the state with `$do` first and check the field.
+
 
 ## Stepping
 
-`Step( Process, Run )` runs exactly one step:
-
-1. If `Status` is not `ready`, ***the run comes back unchanged.***
-   Stepping a halted run is a no-op rather than an error, which is what lets `Execute()`
-   be a plain loop.
-2. Read the step at `Cursor`. If there is none, halt.
-3. Execute it, producing a new `State`, `Status` and `Cursor`.
-4. Return a ***new*** run. The one passed in is never modified.
-
-***Advancing the cursor.***
-Increment the last element.
-If that runs past the end of the branch, drop it along with the branch name above it and
-  increment the element before.
-Repeat. An empty cursor means the process is over.
-
-***The one exception is a step which repeats***, which the walk lands on rather than steps past.
-That single rule is the whole of what makes [`$while`](./Step-Operators.md#$while) and
-  [`$forEach`](./Step-Operators.md#$forEach) loops rather than branches: every other step is
-  finished with once one of its branches ends, while a loop is arrived at again and decides for
-  itself whether to run its body once more or to move on.
-The loop therefore lives ***in the cursor***, and a run stopped in the middle of a pass is an
-  ordinary run which can be stored and picked up later - there is no call stack to write down.
+`Step( Process, Run )` runs exactly one step and returns a new run.
+The run you pass in is never changed.
+A run whose `Status` is not `ready` comes back as an unchanged copy.
 
 ```js
 const branching = {
@@ -200,8 +180,13 @@ let inside = jsonproc.Step( branching, entered );
 inside.Cursor		// returns [ 1 ]
 ```
 
+When a branch ends, the cursor moves to the step after the one which owns the branch.
+A loop is the exception: the cursor returns to [`$while`](./Step-Operators.md#$while) or
+  [`$forEach`](./Step-Operators.md#$forEach), which decides whether to run another pass.
+Because the whole position is in the cursor, a run stopped in the middle of a loop can be stored
+  and resumed like any other.
+
 ***Running off the end of the top level `Steps` is the same as `{ $return: '$$ROOT' }`.***
-A process which computes and never says so still hands back the work it did.
 
 ```js
 let fell_off = jsonproc.Execute( branching, jsonproc.Start( branching, { n: 9 } ) );
@@ -209,10 +194,9 @@ fell_off.Status		// returns 'done'
 fell_off.Result		// returns { n: 9, big: true, seen: true }
 ```
 
-***A budget is required.***
-`Execute()` is the only function here which can loop, so it is the only one which needs
-  one. It defaults to ***1000 steps*** and fails with `StepLimitExceeded` when it is passed.
-`Step()` takes no budget, because one step cannot loop.
+`Execute( Process, Run, MaxSteps )` stops a run which takes more than `MaxSteps` steps and fails
+  it with `StepLimitExceeded`.
+`MaxSteps` is 1000 when it is not a number.
 
 ```js
 let out_of_budget = jsonproc.Execute( branching, jsonproc.Start( branching, { n: 9 } ), 2 );
@@ -223,26 +207,22 @@ out_of_budget.Error.Code	// returns 'StepLimitExceeded'
 
 ## Failure
 
-***Nothing here throws.***
+***None of the four functions throws.***
 A failure is a run with `Status: 'failed'` and an `Error` of `{ Code, Message, Cursor }`.
-An operator still throws, the way every operator in this engine does; the throw is caught and
-  turned into a failed run at the cursor which raised it.
-
-That follows from what the design is for. The standing rule is that
-  *an operator reports and the engine decides how loudly* - except that here there is no caller
-  to raise it to, because the whole point is that a run is a value which can be stored and
-  looked at later, and an error which vanished into a `throw` could not be.
+The run keeps the state it had reached, so you can see what happened before the failure.
 
 | Code | Raised when |
 |---|---|
-| `BadProcess` | the process is not a document with a `Steps` array, a step is not a document with exactly one key, or a step operator found its own arguments malformed - a `$while` with an empty `Do`, say |
-| `BadRun` | the run is not shaped as a run, or belongs to a different process |
+| `BadProcess` | the process is not a document with a `Steps` array; a step is not a document with exactly one key; `$while`, `$forEach` or `$try` has missing or malformed arguments |
+| `BadRun` | the run is not shaped as a run, belongs to a process with a different `Name`, or `Start()` was given an `Input` which is not a document |
 | `NoSuchStep` | the cursor addresses a step which is not there |
 | `UnknownOperator` | a step names an operator which is not registered |
-| `StepFailed` | an operator refused, an expression threw, or the host reported a failed call |
+| `StepFailed` | an expression or query threw; an operator was given the wrong type of argument; `$when` has no `Check` or `$call` has no `Name`; the host reported a failed call without a code |
 | `ResumeNotWaiting` | `Resume()` was called on a run which is not waiting |
-| `StepLimitExceeded` | `Execute()` ran out of budget |
-| `Thrown` | a [`$throw`](./Step-Operators.md#$throw) said so, and nothing caught it |
+| `StepLimitExceeded` | `Execute()` reached `MaxSteps` |
+| `Thrown` | a [`$throw`](./Step-Operators.md#$throw) with no code, and nothing caught it |
+
+A `$throw`, or a host's failed call, may also use a code of its own.
 
 ```js
 const wrong = { Name: 'Wrong', Steps: [ { $nosuchthing: 1 } ] };
@@ -253,16 +233,8 @@ refused.Error.Code		// returns 'UnknownOperator'
 refused.State			// returns {}
 ```
 
-A failed run keeps the state it had reached, so what the process managed to do before it broke
-  is still there to look at.
-
-***A failure may be handled instead of halting.***
-[`$try`](./Step-Operators.md#$try) guards a list of steps, and a failure raised inside it sends
-  the run into that step's `Catch` branch rather than halting it.
-The search for a handler is ***a walk outward through the cursor***, which already records every
-  step the run is inside and which branch of each it entered - so nothing has to be carried on
-  the run for it, and a step entered through its own handler branch is skipped, which is what
-  keeps a failure raised inside a `Catch` from being handed back to that same `Catch`.
+***A failure inside a [`$try`](./Step-Operators.md#$try) runs its `Catch` steps instead of
+  stopping the run.***
 
 ```js
 const guarded_run = {
@@ -283,20 +255,17 @@ recovered.Status				// returns 'done'
 recovered.State.recovered		// returns true
 ```
 
-***The first four codes in the table above, along with `ResumeNotWaiting` and
-  `StepLimitExceeded`, are never caught.***
-A fault in the process document must not be swallowed by that document's own error handler, and
-  the step budget is the caller's protection rather than the process's to defeat.
-See [`$try`](./Step-Operators.md#$try) for the whole of that line.
+`BadProcess`, `BadRun`, `NoSuchStep`, `UnknownOperator`, `ResumeNotWaiting` and
+  `StepLimitExceeded` are never caught.
+See [`$try`](./Step-Operators.md#$try).
 
 
 ## Storage
 
-***A run is a value which survives being written down.***
-This is the claim the whole design rests on, and the reason
-  [`Format()`](http://jsongin.liquicode.com/#/guides/jsongin/Format.md) and [`Parse()`](http://jsongin.liquicode.com/#/guides/jsongin/Parse.md) grew a `TypedValues` option before any
-  of this was built: a `Date` in `$$NOW`, a `RegExp` in the state, and the nothing
-  `$$REMOVE` is bound to are all values plain JSON cannot hold.
+A run can be written down with `Format()` and read back with `Parse()`.
+***Use the `TypedValues` option for both.***
+Without it, a date, `$$NOW` included, comes back as a string, and a regular expression comes
+  back as an empty document.
 
 ```js
 const options = { TypedValues: true };
@@ -309,59 +278,50 @@ let same = ( jsongin.Format( jsonproc.Step( checkout, reloaded ), options )
 same		// returns true
 ```
 
-Store the run and the name of its process. The process document itself is yours to keep
-  wherever you keep your code.
+Store the run and the name of its process.
+Keep the process document wherever you keep your code.
 
 
 ## The Invariants
 
-Six things must be true of the design, and they are checkable without any authority - MongoDB
-  has no process language, so there is no server to compare a run against.
-They are `build/process-check.js`, which drives twelve processes and applies all six at every
-  step of each:
+`npm run process-check` drives a set of fixture processes through the runtime and checks these
+  rules at every step:
 
 | | |
 |---|---|
 | 1 | ***Storage is transparent.*** Stepping a stored run gives what stepping the live one gives. |
 | 2 | ***Stepping is deterministic.*** The same run stepped twice gives the same result. |
-| 3 | ***`Execute()` equals repeated `Step()`.*** The wrapper cannot diverge from the primitive. |
+| 3 | ***`Execute()` equals repeated `Step()`.*** |
 | 4 | ***Runs are independent.*** Two runs stepped alternately never affect each other. |
 | 5 | ***`Step()` is total.*** It always returns a run and never throws. |
 | 6 | ***The input run is never modified.*** Every function returns a new value. |
+| 7 | ***A runaway loop fails.*** `Execute()` always returns. |
+| 8 | ***A failure is caught only where it should be.*** A `$try` catches a failure raised by running a step, and nothing else. |
 
 ```
 npm run process-check
 ```
 
-Rule 4 is what the [scope](http://jsongin.liquicode.com/#/guides/jsongin/Scope.md) being a value rather than engine state bought, and it is
-  tested rather than assumed.
+See [Testing](../Testing.md).
 
 
 ## What Is Not Built
 
-Named here so that nobody looks for them:
+These are not planned:
 
-- ***`async` inside `src/`.*** The host awaits; the engine does not.
+- ***`async` in the runtime.*** Your code does the awaiting.
 - ***Closures and user-defined procedures.***
-- ***A continuation object beyond the run value itself.***
-- ***A caller scope carried into [`Query()`](http://jsongin.liquicode.com/#/guides/jsongin/Query.md)***, which is why a `$when` check cannot
-  see a `$$name` the run bound.
-- ***A parallel step operator.*** Parallel work is the host's: it starts a run for each
-  independent piece, runs them however it likes, and hands the results back through one
-  [`$call`](./Step-Operators.md#$call), which is written out as
-  [Fanning Out](./Step-Operators.md#fanning-out).
-
-***A parallel step was expected here once.*** It was not built, because a branch of one would be
-  a second live cursor, and a run being ***one*** position in one document is the property that
-  the loops, the exception handling and the storage all rest on.
-[Invariant 4](#the-invariants) already says that two runs stepped alternately never affect each
-  other, which is exactly what a host running several of them at the same time needs, so there
-  was nothing left for an operator to add.
+- ***A continuation object*** other than the run itself.
+- ***Variables inside a query.*** A `Check` cannot see a `$$name`; see above.
+- ***A parallel step operator.*** Start a separate run for each piece of parallel work, and hand
+  the results back through one [`$call`](./Step-Operators.md#$call).
+  See [Fanning Out](./Step-Operators.md#fanning-out).
 
 
 ## See Also
 
 - [Step Operators](./Step-Operators.md)
+- [Testing](../Testing.md)
 - [Scope](http://jsongin.liquicode.com/#/guides/jsongin/Scope.md)
 - [`Evaluate()`](http://jsongin.liquicode.com/#/guides/jsongin/Evaluate.md)
 - [`Query()`](http://jsongin.liquicode.com/#/guides/jsongin/Query.md)

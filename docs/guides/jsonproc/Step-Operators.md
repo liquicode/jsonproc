@@ -3,7 +3,7 @@
 
 # Step Operators
 
-The steps of a process, read by the [process runtime](./Process.md).
+The steps of a process, run by the [process runtime](./Process.md).
 A process is a document with a `Steps` array, and each step is one document with one step
   operator in it.
 
@@ -18,10 +18,8 @@ A process is a document with a `Steps` array, and each step is one document with
 | [`$call`](#$call)          | `{ $call: { Name: 'name', With: { ... }, Into: 'path' } }`         |
 | [`$return`](#$return)      | `{ $return: expression }`                                          |
 
-***These are jsonproc operators, not MongoDB ones.***
-MongoDB has no process language, so there is nothing to be at parity with here and nothing for
-  jsongin's `build/api-coverage.js` to count.
-Their argument names are PascalCase for the same reason.
+These are jsonproc's own operators, not MongoDB's, and their argument names are PascalCase.
+An argument of the wrong type, such as `{ $do: [ ... ] }`, fails the step with `StepFailed`.
 
 
 <a id="$do"></a>$do
@@ -29,9 +27,7 @@ Their argument names are PascalCase for the same reason.
 
 Usage: `$do: { field: expression, ... }`
 
-Changes the state of a running process.
-Each field is computed from the current state and written to it, leaving the other fields in
-  place.
+Computes each field from the state and writes it to the state. Other fields are left alone.
 
 ```js
 const totals = {
@@ -46,11 +42,10 @@ let run = jsonproc.Execute( totals, jsonproc.Start( totals, { sub: 100, tax: 8.4
 run.State		// returns { sub: 100, tax: 8.4, total: 108.4, rounded: 108 }
 ```
 
-***This is the aggregation `$set` stage, not the update operator of the same name***, and the
-  difference is the reason the operator exists at all.
-The stage family ***computes***; the update family ***stores***.
-The same document handed to [`Update()`](http://jsongin.liquicode.com/#/guides/jsongin/Update.md) keeps `{ $add: [ ... ] }` as a literal
-  value, which is correct MongoDB behavior for classic update syntax and useless to a process.
+***`$do` is the aggregation `$set` stage, not the update operator `$set`.***
+Its values are expressions, so `{ $add: [ ... ] }` is computed.
+The same document given to [`Update()`](http://jsongin.liquicode.com/#/guides/jsongin/Update.md)
+  stores `{ $add: [ ... ] }` as a literal.
 
 ```js
 let computed = jsongin.Aggregate( [ { sub: 100, tax: 8 } ], [ { $set: { total: { $add: [ '$sub', '$tax' ] } } } ] );
@@ -60,10 +55,8 @@ let stored = jsongin.Update( { sub: 100, tax: 8 }, { $set: { total: { $add: [ '$
 stored.total	// returns { $add: [ '$sub', '$tax' ] }
 ```
 
-***The cost of that choice, stated plainly:***
-`$inc`, `$mul`, `$push` and `$pop` have no stage equivalent, so a counter is incremented by
-  writing the arithmetic out.
-MongoDB made the same trade in its own update-with-pipeline form.
+Update operators such as `$inc`, `$mul`, `$push` and `$pop` do not work in `$do`.
+Write the arithmetic out instead:
 
 ```js
 const counter = { Name: 'Counter', Steps: [ { $do: { n: { $add: [ '$n', 1 ] } } } ] };
@@ -71,8 +64,9 @@ let counted = jsonproc.Execute( counter, jsonproc.Start( counter, { n: 41 } ) );
 counted.State.n		// returns 42
 ```
 
-***An expression which produces nothing removes the field***, exactly as it does in
+An expression which produces nothing removes the field, as in
   [`$addFields`](http://jsongin.liquicode.com/#/guides/jsongin/Stage-Operators.md?id=addfields).
+Use `'$$REMOVE'` to take a field off the state.
 
 ```js
 const dropping = { Name: 'Dropping', Steps: [ { $do: { secret: '$$REMOVE' } } ] };
@@ -80,8 +74,7 @@ let dropped = jsonproc.Execute( dropping, jsonproc.Start( dropping, { keep: 1, s
 dropped.State		// returns { keep: 1 }
 ```
 
-Every expression in one `$do` sees the state as it was at the top of the step, which is what
-  the aggregation stage does.
+Every expression in one `$do` sees the state as it was before the step.
 
 
 <a id="$when"></a>$when
@@ -89,7 +82,7 @@ Every expression in one `$do` sees the state as it was at the top of the step, w
 
 Usage: `$when: { Check: query, Then: [ steps ], Else: [ steps ] }`
 
-Runs one of two lists of steps, according to whether the state matches a query.
+Runs `Then` when the state matches the query, and `Else` when it does not.
 
 ```js
 const sized = {
@@ -113,9 +106,7 @@ small.State.size		// returns 'small'
 ```
 
 ***`Check` is a query, not an expression.***
-A query is what a MongoDB user reaches for first, [`Query()`](http://jsongin.liquicode.com/#/guides/jsongin/Query.md) is at parity, and a
-  query can already hold `$expr` when an expression is wanted - which is MongoDB's own answer
-  to this same question.
+To compare two fields, use `$expr` inside the query:
 
 ```js
 const compared = {
@@ -127,18 +118,17 @@ let comparison = jsonproc.Execute( compared, jsonproc.Start( compared, { a: 9, b
 comparison.State.bigger		// returns 'a'
 ```
 
-`Else` is optional.
-A check which fails with no `Else` advances past the step, and so does a branch which is
-  present but empty.
+`Check` is required; without it the step fails with `StepFailed`.
+`Then` and `Else` are optional. A missing or empty branch does nothing, and the run moves to the
+  next step.
 
-Branches ***nest***, and the cursor records where in them the run is - `[ 0, 'Then', 1 ]` is
-  the second step of the `Then` branch of step 0.
-That is what makes a run suspended inside a branch storable: the position is data, not a call
-  stack.
+While a branch runs, the cursor records the position inside it: `[ 0, 'Then', 1 ]` is the second
+  step of the `Then` branch of step 0.
 
-***A query does not carry the run's variables.***
-[`Query()`](http://jsongin.liquicode.com/#/guides/jsongin/Query.md) takes no scope, so a `$$name` the run bound is not visible inside
-  `Check`, not even within an `$expr`.
+***A query has no variables.***
+[`Query()`](http://jsongin.liquicode.com/#/guides/jsongin/Query.md) takes no scope, so a
+  `$$name` is not visible in `Check`, even within `$expr`, and `$$NOW` there is the current time
+  rather than the run's.
 Compute the value into the state with `$do` first, and check the field.
 
 
@@ -147,7 +137,7 @@ Compute the value into the state with `$do` first, and check the field.
 
 Usage: `$while: { Check: query, Do: [ steps ] }`
 
-Runs a list of steps over and over, for as long as the state matches a query.
+Runs `Do` again and again while the state matches the query.
 
 ```js
 const counting = {
@@ -169,7 +159,7 @@ let counted = jsonproc.Execute( counting, jsonproc.Start( counting, { remaining:
 counted.State		// returns { remaining: 0, done: 3 }
 ```
 
-***The check is made before each pass, so a loop may run no times at all.***
+***The check is made before each pass, so the loop may run no times at all.***
 
 ```js
 const never = {
@@ -184,19 +174,10 @@ let skipped = jsonproc.Execute( never, jsonproc.Start( never, { go: false } ) );
 skipped.State		// returns { go: false, after: true }
 ```
 
-***One pass is several steps, not one.***
-The loop is re-entered through the cursor: entering the body pushes `[ 0, 'Do', 0 ]`, and the
-  end of the body returns to `[ 0 ]` rather than moving past it, which is the one way a loop
-  differs from a branch.
-A run stopped in the middle of a pass is an ordinary run which can be stored and picked up
-  later, which is what lets a [`$call`](#$call) sit inside a loop body.
+Each step of a pass is a step of the run, and the cursor returns to the loop after the last one.
+A run can stop in the middle of a pass, so a [`$call`](#$call) works inside `Do`.
 
-***A loop with no body is a bad process.***
-It could not make progress and could not end, so it fails at the step rather than quietly not
-  looping.
-This is the one place where an empty branch is an error: a missing `Then` means there is
-  nothing to do, while a missing `Do` means there is nothing which could ever change the
-  answer to `Check`.
+A missing `Check`, or a missing or empty `Do`, fails the step with `BadProcess`.
 
 ```js
 const spinning = { Name: 'Spinning', Steps: [ { $while: { Check: { go: true }, Do: [] } } ] };
@@ -206,10 +187,8 @@ refused.Status			// returns 'failed'
 refused.Error.Code		// returns 'BadProcess'
 ```
 
-***A loop which does not end is stopped by the budget, not by this operator.***
-[`Execute()`](./Process.md) fails a run with `StepLimitExceeded` after `MaxSteps` steps,
-  1000 by default.
-[`Step()`](./Process.md) needs no budget, because one step cannot loop.
+A loop which never ends is stopped by [`Execute()`](./Process.md#stepping), which fails the run
+  with `StepLimitExceeded` after `MaxSteps` steps.
 
 ```js
 const forever = {
@@ -222,8 +201,7 @@ stopped.Status			// returns 'failed'
 stopped.Error.Code		// returns 'StepLimitExceeded'
 ```
 
-***`Check` does not carry the run's variables***, the same rule [`$when`](#$when) follows and for
-  the same reason.
+Like [`$when`](#$when), `Check` cannot see variables.
 
 
 <a id="$forEach"></a>$forEach
@@ -231,13 +209,13 @@ stopped.Error.Code		// returns 'StepLimitExceeded'
 
 Usage: `$forEach: { In: expression, As: 'path', Index: 'path', Do: [ steps ] }`
 
-Runs a list of steps once for each element of an array.
+Runs `Do` once for each element of an array.
 
 | **Argument** | **Meaning**                                                              |
 |--------------|--------------------------------------------------------------------------|
 | `In`         | An expression which must produce an array.                               |
-| `As`         | Names a field in the state where each element is written.                |
-| `Index`      | Optional. Names a field where the element's position is written.         |
+| `As`         | The field where each element is written.                                 |
+| `Index`      | Optional. The field where the element's position is written.             |
 | `Do`         | The steps to run for each element.                                       |
 
 ```js
@@ -260,12 +238,7 @@ summed.State		// returns { items: [ 1, 2, 3, 4 ], total: 10 }
 ```
 
 ***The element is written into the state, not bound as a `$$name`.***
-That is the whole reason the loop is usable.
-`Check` in a [`$when`](#$when) or a [`$while`](#$while) is a query, and [`Query()`](http://jsongin.liquicode.com/#/guides/jsongin/Query.md)
-  takes no scope, so a `$$name` would be invisible to exactly the test a loop body most often
-  wants to make.
-Written into the state it is reachable both ways - as `'$item'` in an expression and as
-  `{ item: ... }` in a query.
+So it can be read as `'$item'` in an expression and as `{ item: ... }` in a query:
 
 ```js
 const classifying = {
@@ -292,7 +265,7 @@ classified.State.big		// returns 1
 classified.State.small		// returns 2
 ```
 
-`Index` is optional, and names a field which is written alongside the element.
+`Index` writes the element's position alongside it:
 
 ```js
 const positions = {
@@ -312,20 +285,18 @@ let placed = jsonproc.Execute( positions, jsonproc.Start( positions, { items: [ 
 placed.State.seen		// returns [ 0, 1, 2 ]
 ```
 
-***`As` and `Index` name fields the loop owns***, and they are removed from the state when the
-  loop ends, so a process which ran a loop does not carry its last element around afterward.
-A loop which ran no passes removes nothing, because it wrote nothing.
+***The `As` and `Index` fields are removed when the loop ends.***
+A field of the same name already in the state is overwritten on the first pass and then removed
+  too.
+A loop over an empty array writes nothing and removes nothing.
 
 ```js
 let tidied = jsonproc.Execute( summing, jsonproc.Start( summing, { items: [ 1, 2 ] } ) );
 Object.keys( tidied.State ).includes( 'item' )		// returns false
 ```
 
-***The iteration lives in the cursor, not in the state.***
-The branch element is `[ 'Do', 3 ]` while the fourth pass is running, which is why a plain
-  branch writes `'Then'` and a loop writes a pair.
-Nothing about where the loop has got to is kept in the document it is working on, which is
-  what lets a run be stored in the middle of a pass and resumed.
+The pass number is kept in the cursor, not the state: the branch element is `[ 'Do', 3 ]` during
+  the fourth pass.
 
 ```js
 let entered = jsonproc.Step( summing, jsonproc.Step( summing, jsonproc.Start( summing, { items: [ 1, 2 ] } ) ) );
@@ -333,15 +304,12 @@ entered.Cursor		// returns [ 1, [ 'Do', 0 ], 0 ]
 ```
 
 ***`In` is evaluated again before each pass.***
-A body which appends to the array is a work list which grows, and a body which shortens it
-  ends the loop early.
-This is deliberate, and it is one more reason [`Execute()`](./Process.md) has a budget:
-  a body which appends forever fails with `StepLimitExceeded` rather than running forever.
+If `Do` adds to the array, the loop runs longer; if it shortens the array, the loop ends sooner.
+A loop which keeps adding is stopped by `Execute()` with `StepLimitExceeded`.
 
-***A loop with no body is a bad process***, the same as it is for [`$while`](#$while).
-So is a missing `As`, or an `Index` which is not a field name.
-An `In` which does not produce an array is a `StepFailed` instead, because that one depends on
-  what the run has computed rather than on how the process was written.
+A missing `As`, an `Index` which is not a string, or a missing or empty `Do` fails the step with
+  `BadProcess`.
+An `In` which does not produce an array fails it with `StepFailed`.
 
 
 <a id="$try"></a>$try
@@ -349,13 +317,13 @@ An `In` which does not produce an array is a `StepFailed` instead, because that 
 
 Usage: `$try: { Do: [ steps ], Catch: [ steps ], As: 'path' }`
 
-Runs a list of steps, and runs a second list instead of halting if one of them fails.
+Runs `Do`. If a step in it fails, runs `Catch` instead of stopping the run.
 
 | **Argument** | **Meaning**                                                              |
 |--------------|--------------------------------------------------------------------------|
 | `Do`         | The steps to run.                                                        |
-| `Catch`      | The steps to run instead if one of them fails.                           |
-| `As`         | Optional. Names a field where the error is written before `Catch` runs.  |
+| `Catch`      | The steps to run if one of them fails.                                   |
+| `As`         | Optional. The field where the error is written before `Catch` runs.      |
 
 ```js
 const guarded = {
@@ -378,9 +346,8 @@ handled.State.why		// returns 'nothing to charge for'
 handled.State.finished	// returns true
 ```
 
-***The error goes into the state, not into a variable***, for the reason a loop's element does:
-  a [`$when`](#$when) in the handler is a query, and [`Query()`](http://jsongin.liquicode.com/#/guides/jsongin/Query.md) takes no scope.
-Written into the state, the handler can route on it.
+The error is written as `{ Code, Message, Cursor }`.
+Because it is in the state, a `$when` in `Catch` can check it:
 
 ```js
 const routed = {
@@ -406,21 +373,16 @@ let sorted = jsonproc.Execute( routed, jsonproc.Start( routed, {} ) );
 sorted.State.why		// returns 'empty cart'
 ```
 
-***A `$try` catches a failure raised by running a step, and nothing else.***
-An operator which refused, a [`$throw`](#$throw), and a call the host reported as failed
-  through [`Resume()`](./Process.md) are all caught.
-***A fault in the process document is not.***
+***A `$try` catches `StepFailed`, `Thrown`, and any code a `$throw` or the host chose.***
+That includes a [`$throw`](#$throw), an expression which threw, and a call the host reported as
+  failed through [`Resume()`](./Process.md#running-one), at any depth inside `Do`.
+These codes are never caught:
 
 | Never caught | |
 |---|---|
 | `BadProcess` | `BadRun` |
 | `NoSuchStep` | `UnknownOperator` |
 | `ResumeNotWaiting` | `StepLimitExceeded` |
-
-That line is the difference between an error and a bug.
-A process which mishandles a declined card is doing its job;
-  a process with a misspelled operator name in it is broken, and a `$try` which swallowed that
-  would turn every typo into a silently handled error.
 
 ```js
 const typo = {
@@ -433,13 +395,8 @@ unswallowed.Status			// returns 'failed'
 unswallowed.Error.Code		// returns 'UnknownOperator'
 ```
 
-`StepLimitExceeded` is on the list for a different reason.
-It is the caller's protection against a process which does not end, and a process must not be
-  able to defeat it from the inside.
-
-***A failure raised inside `Catch` is not caught by the same `Catch`.***
-It is offered to the next `$try` outward, and halts the run if there is none.
-Without that rule a handler which failed would hand itself its own failure forever.
+A failure inside `Catch` is not caught by the same `$try`.
+It goes to the next `$try` outward, or stops the run if there is none.
 
 ```js
 const rethrown = {
@@ -452,21 +409,14 @@ escaped.Status				// returns 'failed'
 escaped.Error.Message		// returns 'second'
 ```
 
-***The handler sees the state as the failure left it.***
-A step which changed the state and then failed did change it.
-Rolling that back would mean holding a copy of the state at every step in case one were
-  needed, which is a transaction and is not what this is.
-The same follows for a loop abandoned part way: it never reaches its own tidying up, so the
-  field its `As` named is still on the state when the handler runs.
+***Nothing is rolled back.*** `Catch` sees the state as the failure left it.
+A loop abandoned by the failure leaves its `As` and `Index` fields behind.
 
-***The field `As` names stays after the handler runs.***
-Unlike a loop's `As`, which is rewritten every pass and would otherwise leave the last element
-  behind, an error is written once and deliberately.
-Take it off with `{ $do: { error: '$$REMOVE' } }` when it is not wanted.
+The `As` field stays on the state after `Catch` runs.
+Remove it with `{ $do: { error: '$$REMOVE' } }` if you do not want it.
 
-***A `$try` needs both branches.***
-A missing or empty `Do` has nothing to guard and a missing or empty `Catch` catches nothing,
-  and both are a `BadProcess` - the same reading a loop with no body gets.
+A missing or empty `Do` or `Catch`, or an `As` which is not a string, fails the step with
+  `BadProcess`.
 
 
 <a id="$throw"></a>$throw
@@ -476,12 +426,13 @@ Usage: `$throw: expression`
 
 Fails the run on purpose.
 
-The expression is evaluated against the current state, and may produce either form:
+The expression is evaluated against the state:
 
-| Produces | Becomes |
+| Produces | Error |
 |---|---|
 | a string | `{ Code: 'Thrown', Message: <the string> }` |
-| a document | `{ Code, Message }`, with `Code` defaulting to `Thrown` |
+| a document | `{ Code, Message }`; `Code` defaults to `Thrown` and `Message` to `''` |
+| anything else | `{ Code: 'Thrown', Message: <the value as a string> }` |
 
 ```js
 const complaining = { Name: 'Complaining', Steps: [ { $throw: 'the cart is empty' } ] };
@@ -492,10 +443,9 @@ complained.Error		// returns { Code: 'Thrown', Message: 'the cart is empty', Cur
 ```
 
 The nearest enclosing [`$try`](#$try) catches it.
-With no `$try` around it the run halts, which is what the example above did.
+With no `$try`, the run stops, as above.
 
-***`Thrown` is the default code so that a deliberate failure can be told from an engine one.***
-A handler which cares can check it.
+Use the document form to choose a code:
 
 ```js
 const named = {
@@ -508,11 +458,9 @@ complaint.Error.Code		// returns 'NoCustomer'
 complaint.Error.Message		// returns 'no such customer: ada'
 ```
 
-***A `$throw` may not name one of the engine's own codes.***
-Those are the codes a [`$try`](#$try) refuses to catch, so a process which could raise one
-  would be able to reach past every handler around it and halt the run - which is the caller's
-  decision to make and not the process's.
-Naming one is itself a `BadProcess`.
+***A `$throw` may not use a code a `$try` never catches.***
+Naming `BadProcess`, `BadRun`, `NoSuchStep`, `UnknownOperator`, `ResumeNotWaiting` or
+  `StepLimitExceeded` fails the step with `BadProcess` instead.
 
 ```js
 const sneaky = { Name: 'Sneaky', Steps: [ { $throw: { Code: 'BadProcess', Message: 'let me out' } } ] };
@@ -527,7 +475,7 @@ denied.Error.Code		// returns 'BadProcess'
 
 Usage: `$call: { Name: 'name', With: { field: expression, ... }, Into: 'path' }`
 
-Suspends the run so that the host can do something the engine cannot.
+Suspends the run so that your code can do work the runtime cannot.
 
 ```js
 const charging = {
@@ -544,10 +492,9 @@ waiting.Waiting.Name	// returns 'ChargeCard'
 waiting.Waiting.With	// returns { amount: 42 }
 ```
 
-***`$call` does not call.***
-The engine performs no I/O, has no dependency, and contains no `async`.
-The host reads the descriptor, does the work, does the awaiting, and hands the answer back
-  with `Resume()`.
+***`$call` does not call anything.***
+The run stops with `Status: 'waiting'` and a `Waiting` document.
+Your code reads it, does the work, and passes the answer to `Resume()`.
 
 ```js
 let resumed = jsonproc.Execute( charging, jsonproc.Resume( charging, waiting, { paid: true } ) );
@@ -555,25 +502,20 @@ resumed.Status		// returns 'done'
 resumed.Result		// returns { paid: true }
 ```
 
-`With` is evaluated against the state ***when the step runs***, so the descriptor the host
-  receives holds values rather than expressions.
-A run stored while it waits and resumed a day later hands over the amount computed at the
-  moment the step ran.
-
-`Into` names a path in the state where the result is written, and is optional: a call whose
-  result is not wanted omits it.
-A result of nothing removes the field at `Into` rather than setting it to `undefined`, which is
-  the same rule `$do` follows and the same reason - a run has to stay storable.
+| **Argument** | **Meaning**                                                              |
+|--------------|--------------------------------------------------------------------------|
+| `Name`       | Required. What you are being asked to do. Without it the step fails with `StepFailed`. |
+| `With`       | Optional. An expression document, evaluated when the step runs, so `Waiting.With` holds values. Defaults to `{}`. |
+| `Into`       | Optional. The field where `Resume()` writes the result. A result of `undefined` removes the field. |
 
 
 ### Fanning Out
 
-***Work which can happen at the same time belongs to the host, not to the engine.***
-One `$call` may ask for several things at once, and the host is free to do them concurrently -
-  with `Promise.all()`, with a worker pool, with whatever it already uses - because the engine
-  is not inside that loop.
+***Parallel work is done by your code, not by a step.***
+One `$call` can ask for several things, and your code can do them at the same time however it
+  likes.
 
-Each piece of independent work can be a process of its own, run as a child of the call.
+Each piece of work can be a separate process with its own run:
 
 ```js
 const checking = {
@@ -599,7 +541,7 @@ const ordering = {
 	],
 };
 
-// The host's handler for the call. A real one awaits Promise.all() around this loop.
+// Your handler for the call. A real one could run the children with Promise.all().
 function run_checks( Checks )
 {
 	let results = [];
@@ -624,21 +566,11 @@ order.Status		// returns 'done'
 order.Result		// returns 'review'
 ```
 
-The parent is still ***one cursor and one state***, so it can be written down while the
-  children are outstanding and resumed by whoever picks it up next.
-[Invariant 4](./Process.md#the-invariants) - two runs stepped alternately never affect each
-  other - is what makes running the children at the same time safe, and it is checked rather
-  than assumed.
-
-If one of the children fails, the host says so through the fourth parameter of
-  `Resume()`, and the parent's [`$try`](#$try) catches it the way it catches any other
-  failed call.
-
-***This is why there is no parallel step operator.***
-A branch of one would be a second live cursor, and a run would stop being one position in one
-  document - which is the property the loops, the exception handling and the storage are all
-  built on.
-See [What Is Not Built](./Process.md#what-is-not-built).
+The parent run can be stored while the children are running.
+Runs never affect each other ([invariant 4](./Process.md#the-invariants)), so the children are
+  safe to run at the same time.
+If a child fails, report it through the fourth argument of `Resume()`, and a `$try` around the
+  `$call` catches it.
 
 
 <a id="$return"></a>$return
@@ -646,7 +578,7 @@ See [What Is Not Built](./Process.md#what-is-not-built).
 
 Usage: `$return: expression`
 
-Halts the run, and names what it produced.
+Ends the run with `Status: 'done'` and the expression's value in `Result`.
 
 ```js
 const answering = { Name: 'Answering', Steps: [ { $return: { sum: { $add: [ '$a', '$b' ] } } } ] };
@@ -658,8 +590,7 @@ answer.Result		// returns { sum: 3 }
 
 The steps after it do not run.
 
-***Running off the end of the top level `Steps` does the same thing as `{ $return: '$$ROOT' }`.***
-A process which computes and never says so still hands back the work it did.
+***Running off the end of the top level `Steps` is the same as `{ $return: '$$ROOT' }`.***
 
 ```js
 const implicit = { Name: 'Implicit', Steps: [ { $do: { doubled: { $multiply: [ '$n', 2 ] } } } ] };
@@ -669,10 +600,7 @@ implied.Status		// returns 'done'
 implied.Result		// returns { n: 21, doubled: 42 }
 ```
 
-***An expression which produces nothing leaves the run with no `Result` at all***, rather than
-  with a `Result` of `undefined`.
-A field set to `undefined` does not survive being written down and read back, and a run which
-  cannot be stored is not a run.
+An expression which produces nothing leaves the run with no `Result` field at all.
 
 ```js
 const empty_handed = { Name: 'EmptyHanded', Steps: [ { $return: '$nope' } ] };

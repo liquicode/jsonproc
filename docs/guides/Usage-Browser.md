@@ -3,16 +3,13 @@
 
 # Browser Usage
 
-The `dist/jsonproc.min.js` file is a UMD bundle of the entire library.
+`dist/jsonproc.min.js` is a UMD bundle of the library.
 
-***jsongin is not inside it.***
-The bundle keeps its `require` and resolves it to the global `jsongin` publishes, so a page
-  loads the two scripts in order and both libraries then share ***one*** engine.
-Bundling a copy would have given the page two engines, and an operator registered through one
-  would have been invisible to the other.
+***It does not contain jsongin.*** Load `jsongin.min.js` first.
+The bundle uses the `jsongin` global, so both libraries share one engine.
 
 
-## Include jsonproc using UNPKG
+## Load from UNPKG
 
 ```html
 <script
@@ -25,7 +22,7 @@ Bundling a copy would have given the page two engines, and an operator registere
 ></script>
 ```
 
-To pin a version rather than tracking the latest, name it in the URL:
+To use a specific version, put it in the URL:
 
 ```html
 <script
@@ -38,39 +35,35 @@ To pin a version rather than tracking the latest, name it in the URL:
 ></script>
 ```
 
-> ***Order matters.*** `jsonproc.min.js` reads `window.jsongin` as it loads, so a page which
-  loads it first gets an undefined engine rather than an error which says so.
+> ***Order matters.*** If `jsonproc.min.js` loads before jsongin, it loads without an error, but
+  its runtime has no engine and the first call throws.
 
 
-## Use jsonproc in your Page
+## Use it in a Page
 
-Loading the script defines two globals.
-Both refer to the same library and you can use whichever you prefer.
+The script defines two globals for the same runtime:
 
 ```html
 <script>
-  // The library's own namespace:
-  var jsonproc = window.liquicode.jsonproc;
-
-  // Or the bundle's global, which is the same instance:
   var jsonproc = window.jsonproc;
+  // or
+  var jsonproc = window.liquicode.jsonproc;
 
   console.log( 'Loaded: ' + jsonproc.Library.name + ', v' + jsonproc.Library.version );
 </script>
 ```
 
-Both of these are ready-to-use instances with logging turned off.
+This runtime has logging turned off.
 
 
-## Create an Instance with Custom Settings
+## Create a Runtime with Settings
 
-To configure the runtime, use the `NewJsonproc( Settings )` factory method.
-In the browser it is found at `window.liquicode.NewJsonproc`.
+In the browser, `NewJsonproc( Settings )` is at `window.liquicode.NewJsonproc`:
 
 ```html
 <script>
   var jsonproc = window.liquicode.NewJsonproc( {
-    jsongin: window.liquicode.jsongin,
+    jsongin: window.jsongin,
     OpLog: console.log,
     OpError: console.error,
   } );

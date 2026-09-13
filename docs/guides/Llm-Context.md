@@ -1,21 +1,15 @@
 # jsonproc for a Language Model
 
-A single self-contained description of everything a model needs in order to write a **process**
-for jsonproc, written to be pasted into a prompt whole.
+Everything a model needs in order to write a **process** for jsonproc, in one document meant to
+be pasted into a prompt whole. For the page-by-page reference, see the
+[Library Guide](/guides/Library-Guide.md).
 
-This is a *derivation*, not a reference. The [Library Guide](/guides/Library-Guide.md) and the
-operator pages explain the engine to a human reading one page at a time; this gives a model the
-whole vocabulary at once, with the traps called out where they happen.
+jsonproc runs on [jsongin](https://github.com/liquicode/jsongin). Here, *query* means a jsongin
+query criteria and *expression* means a jsongin aggregation expression. They are different
+languages, and telling them apart is most of what there is to learn.
 
-jsonproc runs on [jsongin](https://github.com/liquicode/jsongin). Where this document says
-*query* it means a jsongin query criteria, and where it says *expression* it means a jsongin
-aggregation expression. The two are not interchangeable and telling them apart is most of what
-there is to learn here.
-
-**Every example below uses one invented subject**, a freight consignment, which is not
-anybody's real data. The point of an example here is the *shape* of the operator; a document
-written around one consumer's field names teaches those names instead. **Use the field names of
-the data you are actually shown, never these.**
+**Every example below uses one invented subject**, a freight consignment. The examples show the
+*shape* of each operator. **Use the field names of the data you are actually shown, never these.**
 
 
 ## The shape of a process
@@ -35,8 +29,8 @@ exactly one step operator:**
 }
 ```
 
-Two steps in one object is refused. `{ "$do": {...}, "$return": "$x" }` is not a step; it is
-two steps and must be written as two array elements.
+Two operators in one object is refused. `{ "$do": {...}, "$return": "$x" }` must be written as
+two array elements.
 
 There are **eight** step operators and no others: `$do`, `$when`, `$while`, `$forEach`, `$try`,
 `$throw`, `$call`, `$return`. There is no `$if`, no `$for`, no `$switch`, no `$log` and no
@@ -73,11 +67,13 @@ the whole of `$do`, `$return` and `$throw` take **expressions**.
 value is the most common expression mistake, and nothing rejects it — the process runs and
 carries the wrong data.
 
-A query can hold `$expr` when you genuinely need to compare two fields:
+A query can hold `$expr` when you need to compare two fields:
 `{ "$expr": { "$gt": [ "$Paid", "$Charge" ] } }`.
 
-Three system variables are available in expressions: `$$NOW` for the current time, `$$ROOT` for
-the whole state, and `$$REMOVE`, which takes a field off the state when written to it.
+System variables in expressions include `$$NOW` for the time the run started, `$$ROOT` and
+`$$CURRENT` for the whole state, and `$$REMOVE`, which takes a field off the state when written
+to it. **A `Check` cannot see variables**: inside a query, `$$NOW` is the current time instead.
+Copy a value into the state with `$do` before checking it.
 
 
 ## The step operators
@@ -91,11 +87,9 @@ the whole state, and `$$REMOVE`, which takes a field off the state when written 
 Each field is computed from the current state and written back, leaving other fields alone.
 
 **`$do` is the aggregation `$set` *stage*, not the update operator of the same name.** It
-computes. So `{ "$add": [ "$n", 1 ] }` is arithmetic here, where the same document handed to an
-update would be stored literally.
+computes. So `{ "$add": [ "$n", 1 ] }` is arithmetic here.
 
-The cost of that choice: **`$inc`, `$mul` and `$push` do not exist here.** A counter is
-incremented by computing it:
+**`$inc`, `$mul` and `$push` do not exist here.** A counter is incremented by computing it:
 
 ```
 { "$do": { "Handled": { "$add": [ "$Handled", 1 ] } } }     correct
@@ -139,8 +133,8 @@ each element is written before its pass. `Index` is optional and gets the positi
 body.
 
 **The element is written into the state, not bound as a variable**, so it is reachable both as
-`"$Leg"` in an expression and as `{ "Leg": ... }` in a query — which matters, because a `Check`
-cannot see variables. **`As` and `Index` are removed when the loop ends.**
+`"$Leg"` in an expression and as `{ "Leg": ... }` in a query. **`As` and `Index` are removed
+when the loop ends.**
 
 `In` is evaluated again before every pass, so a body that appends to the array is a work list
 that grows.
@@ -154,11 +148,10 @@ that grows.
 `As` is optional and names where the error is written as `{ Code, Message, Cursor }` before
 `Catch` runs. Unlike a loop's `As`, it **stays** on the state afterwards.
 
-**A `$try` catches a failure raised by running a step, and nothing else.** A refused operator, a
-`$throw`, and a host-reported call failure are caught. A fault in the process document is not:
-`BadProcess`, `BadRun`, `NoSuchStep`, `UnknownOperator`, `ResumeNotWaiting` and
-`StepLimitExceeded` halt the run whatever it is wrapped in. That line is the difference between
-an error and a bug.
+**A `$try` catches a failure raised by running a step, and nothing else.** A `$throw`, an
+expression that fails, and a host-reported call failure are caught. A fault in the process
+document is not: `BadProcess`, `BadRun`, `NoSuchStep`, `UnknownOperator`, `ResumeNotWaiting`
+and `StepLimitExceeded` stop the run whatever it is wrapped in.
 
 A failure inside `Catch` is not caught by the same `Catch`. The state is **not** rolled back.
 
@@ -170,11 +163,10 @@ A failure inside `Catch` is not caught by the same `Catch`. The state is **not**
 ```
 
 A string becomes `{ Code: 'Thrown', Message: <string> }`. **A document keeps the `Code` you
-give it**, so when a particular code is wanted, write the document form — the string form
-always produces `Thrown` and nothing else. The engine's own codes are reserved and naming one
-is itself a `BadProcess`.
+give it**, so when a particular code is wanted, write the document form. The codes listed under
+`$try` are reserved, and naming one is itself a `BadProcess`.
 
-The nearest enclosing `$try` catches it; with none, the run halts with `Status: 'failed'`.
+The nearest enclosing `$try` catches it; with none, the run stops with `Status: 'failed'`.
 
 ### `$call` — ask the host to do something
 
@@ -183,8 +175,7 @@ The nearest enclosing `$try` catches it; with none, the run halts with `Status: 
 ```
 
 **`$call` does not call.** The step suspends the run with `Status: 'waiting'` and a descriptor
-saying what is wanted; the host does the work and hands the answer back with `Resume()`. The
-engine performs no I/O and contains no `async`.
+saying what is wanted; the host does the work and hands the answer back with `Resume()`.
 
 **`With` is an expression document**, so every value in it that should carry data from the state
 needs a `$`:
@@ -197,7 +188,7 @@ needs a `$`:
         WRONG - the host receives the literal strings "Delay" and "Weight"
 ```
 
-`Into` names where the result is written and is optional.
+`Name` is required. `Into` names where the result is written and is optional.
 
 ### `$return` — stop and say what was produced
 
