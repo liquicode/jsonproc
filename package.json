@@ -1,6 +1,6 @@
 {
 	"name": "@liquicode/jsonproc",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "A Process Runtime for JSON Documents",
 	"license": "MIT",
 	"engines": {
@@ -61,7 +61,7 @@
 		"jsongin"
 	],
 	"dependencies": {
-		"@liquicode/jsongin": "^0.1.0"
+		"@liquicode/jsongin": "^0.2.0"
 	},
 	"devDependencies": {
 		"@liquicode/devops": "^0.1.0",

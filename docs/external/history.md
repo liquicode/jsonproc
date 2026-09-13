@@ -5,7 +5,28 @@
 
 
 
-v0.1.0 (current)
+v0.2.0 (current)
+---------------------------------------------------------------------
+
+***Built on `@liquicode/jsongin` 0.2.0.*** The runtime itself is unchanged, but the checks in
+  `$when` and `$while` are jsongin queries, so they follow jsongin's new rules: an object whose
+  first key is an operator holds only operators, and one whose first key is a field name is a
+  value. Read [jsongin's history](https://github.com/liquicode/jsongin/blob/main/history.md) for
+  the details.
+
+- ***ESM named imports and TypeScript declarations.*** The package has an `exports` map, an ESM
+  entry point `src/jsonproc.mjs`, and `types/jsonproc.d.ts`.
+  *Breaking for deep imports: a path into the package other than those the map names is no
+  longer reachable.*
+- ***`docs/guides/Llm-Context.md`*** describes the process language for a language model, and a
+  check holds it to every step operator.
+- The user documentation is rewritten in plain language, and each claim was checked against the
+  runtime.
+- The package declares Node.js `>=10.4.0` in `engines`.
+
+
+
+v0.1.0 (2026-08-29)
 ---------------------------------------------------------------------
 
 ***The first version, and it is a move rather than a beginning.***

@@ -1,12 +1,12 @@
 <!-- _coverpage.md -->
 
-# @liquicode/jsonproc <small>(v0.1.0)</small>
+# @liquicode/jsonproc <small>(v0.2.0)</small>
 
 <hr>
 
 > A Process Runtime for JSON Documents
 
-> Define a process as JSON, run it a step at a time, store it half-finished, and pick it up
+> Define a process as JSON, run it a step at a time, store it unfinished, and continue it
   somewhere else.
 
 <hr>
@@ -14,11 +14,11 @@
 <div class="cover-features">
 	<ul class="cover-feature-list">
 		<li>A process is a JSON document. A run is a JSON value.</li>
-		<li>The runtime holds nothing between calls.</li>
-		<li>A run can be written down and read back, exactly.</li>
-		<li>Eight invariants, checked on every step of every fixture.</li>
-		<li>Expressions and queries are MongoDB's, by way of jsongin.</li>
-		<li>Nothing throws. A failure is a run you can look at.</li>
+		<li>The runtime keeps nothing between calls.</li>
+		<li>A run can be stored and read back exactly.</li>
+		<li>Invariants checked at every step of every fixture.</li>
+		<li>Expressions and queries follow MongoDB, by way of jsongin.</li>
+		<li>Nothing throws. A failure is a run you can inspect.</li>
 	</ul>
 </div>
 
