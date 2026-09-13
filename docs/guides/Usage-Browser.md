@@ -7,6 +7,7 @@
 
 ***It does not contain jsongin.*** Load `jsongin.min.js` first.
 The bundle uses the `jsongin` global, so both libraries share one engine.
+Loaded before jsongin, the bundle throws `jsonproc needs the jsongin engine and has none`.
 
 
 ## Load from UNPKG

@@ -90,6 +90,14 @@ describe( '100) Process Runtime Tests', () =>
 			assert.deepStrictEqual( run.State, {} );
 		} );
 
+		it( 'should refuse to build a runtime which has no engine', () =>
+		{
+			// ***The browser bundle loaded before jsongin.min.js*** has no engine to run
+			// against. It used to load without complaint and throw a TypeError from the first
+			// Start(); it throws at once now, naming what to load.
+			assert.throws( function () { jsonproc.NewJsonproc( { jsongin: {} } ); }, /jsongin/ );
+		} );
+
 		it( 'should carry a scope holding the instant the run began', () =>
 		{
 			let run = jsonproc.Start( { Name: 'X', Steps: [] }, {} );
@@ -166,12 +174,14 @@ describe( '100) Process Runtime Tests', () =>
 			assert.strictEqual( run.Status, 'ready' );
 		} );
 
-		it( 'should refuse an argument which is not a document', () =>
+		it( 'should refuse an argument which is not a document, as a fault in the process', () =>
 		{
+			// An argument of the wrong type is wrong on every input, so it is BadProcess and a
+			// $try does not catch it. It was StepFailed until 2026-09-13.
 			let process_document = { Name: 'Bad', Steps: [ { $do: 42 } ] };
 			let run = jsonproc.Step( process_document, jsonproc.Start( process_document, {} ) );
 			assert.strictEqual( run.Status, 'failed' );
-			assert.strictEqual( run.Error.Code, 'StepFailed' );
+			assert.strictEqual( run.Error.Code, 'BadProcess' );
 		} );
 
 	} );
@@ -281,12 +291,37 @@ describe( '100) Process Runtime Tests', () =>
 			assert.strictEqual( run.State.bigger, 'a' );
 		} );
 
-		it( 'should refuse a Check which is not a query document', () =>
+		it( 'should refuse a Check which is not a query document, as a fault in the process', () =>
 		{
+			// It was StepFailed until 2026-09-13, while the same fault on $while was BadProcess.
 			let process_document = { Name: 'Bad', Steps: [ { $when: { Then: [] } } ] };
 			let run = jsonproc.Step( process_document, jsonproc.Start( process_document, {} ) );
 			assert.strictEqual( run.Status, 'failed' );
-			assert.strictEqual( run.Error.Code, 'StepFailed' );
+			assert.strictEqual( run.Error.Code, 'BadProcess' );
+		} );
+
+		it( 'should refuse a Check which jsongin refuses, as a fault in the process', () =>
+		{
+			// A criteria jsongin refuses is refused whatever the state holds, so it is a
+			// mistake in the process rather than a failure of the run.
+			let process_document = { Name: 'Bad', Steps: [ { $when: { Check: { n: { $nope: 1 } }, Then: [ { $do: { a: 1 } } ] } } ] };
+			let run = jsonproc.Step( process_document, jsonproc.Start( process_document, { n: 1 } ) );
+			assert.strictEqual( run.Status, 'failed' );
+			assert.strictEqual( run.Error.Code, 'BadProcess' );
+		} );
+
+		it( 'should read $$NOW in a Check as the instant the run began', () =>
+		{
+			// ***$$NOW is fixed for the whole run***, and a Check is no exception. The run is
+			// given an instant in 1970 so that the clock could not agree with it by accident.
+			let process_document = {
+				Name: 'Now',
+				Steps: [ { $when: { Check: { $expr: { $lt: [ '$$NOW', new Date( 5000 ) ] } }, Then: [ { $do: { old: true } } ], Else: [ { $do: { old: false } } ] } } ],
+			};
+			let start = jsonproc.Start( process_document, {} );
+			start.Scope.Variables.NOW = new Date( 1000 );
+			let run = jsonproc.Execute( process_document, start );
+			assert.strictEqual( run.State.old, true );
 		} );
 
 	} );
@@ -412,6 +447,28 @@ describe( '100) Process Runtime Tests', () =>
 				assert.strictEqual( run.Status, 'ready' );
 			}
 			assert.strictEqual( run.State.spins, 25 );
+		} );
+
+		it( 'should refuse a Check which jsongin refuses, as a fault in the process', () =>
+		{
+			let process_document = { Name: 'Bad', Steps: [ { $while: { Check: { go: { $nope: true } }, Do: [ { $do: { go: false } } ] } } ] };
+			let run = jsonproc.Step( process_document, jsonproc.Start( process_document, { go: true } ) );
+			assert.strictEqual( run.Status, 'failed' );
+			assert.strictEqual( run.Error.Code, 'BadProcess' );
+		} );
+
+		it( 'should read $$NOW in a Check as the instant the run began', () =>
+		{
+			// Against the clock this loop would never run; against the run's 1970 instant it
+			// runs once and then stops on its counter.
+			let process_document = {
+				Name: 'Now',
+				Steps: [ { $while: { Check: { $expr: { $and: [ { $lt: [ '$$NOW', new Date( 5000 ) ] }, { $lt: [ '$n', 1 ] } ] } }, Do: [ { $do: { n: { $add: [ '$n', 1 ] } } } ] } } ],
+			};
+			let start = jsonproc.Start( process_document, { n: 0 } );
+			start.Scope.Variables.NOW = new Date( 1000 );
+			let run = jsonproc.Execute( process_document, start );
+			assert.strictEqual( run.State.n, 1 );
 		} );
 
 	} );
@@ -1029,6 +1086,26 @@ describe( '100) Process Runtime Tests', () =>
 			assert.strictEqual( 'caught' in run.State, false );
 		} );
 
+		// ***The same mistake is caught by nobody, whichever operator it is in.*** A $when or a
+		// $call missing an argument was StepFailed until 2026-09-13, so a $try around it took
+		// the author's typo for a failure of the run and carried on through its Catch.
+		it( 'should not catch a missing argument on any operator', () =>
+		{
+			let steps = [
+				{ $when: { Then: [ { $do: { a: 1 } } ] } },
+				{ $call: { With: {} } },
+				{ $while: { Do: [ { $do: { a: 1 } } ] } },
+			];
+			for ( let index = 0; index < steps.length; index++ )
+			{
+				let process_document = wrapping( steps[ index ] );
+				let run = jsonproc.Execute( process_document, jsonproc.Start( process_document, {} ) );
+				assert.strictEqual( run.Status, 'failed', JSON.stringify( steps[ index ] ) );
+				assert.strictEqual( run.Error.Code, 'BadProcess', JSON.stringify( steps[ index ] ) );
+				assert.strictEqual( 'caught' in run.State, false, JSON.stringify( steps[ index ] ) );
+			}
+		} );
+
 	} );
 
 
@@ -1123,12 +1200,12 @@ describe( '100) Process Runtime Tests', () =>
 			assert.deepStrictEqual( run.Waiting.With, {} );
 		} );
 
-		it( 'should refuse a call with no Name', () =>
+		it( 'should refuse a call with no Name, as a fault in the process', () =>
 		{
 			let process_document = { Name: 'A', Steps: [ { $call: { With: {} } } ] };
 			let run = jsonproc.Step( process_document, jsonproc.Start( process_document, {} ) );
 			assert.strictEqual( run.Status, 'failed' );
-			assert.strictEqual( run.Error.Code, 'StepFailed' );
+			assert.strictEqual( run.Error.Code, 'BadProcess' );
 		} );
 
 	} );
@@ -1293,6 +1370,34 @@ describe( '100) Process Runtime Tests', () =>
 			run = jsonproc.Resume( process_document, run, undefined, { Code: 'CardDeclined', Message: 'insufficient funds' } );
 			assert.strictEqual( run.Error.Code, 'CardDeclined' );
 			assert.strictEqual( run.Error.Message, 'insufficient funds' );
+		} );
+
+		it( 'should read a null failure as no failure', () =>
+		{
+			// A host passing null for "no error" is ordinary. Anything but undefined used to be
+			// read as a failure, so the result was dropped and the run failed with 'null'.
+			let process_document = { Name: 'A', Steps: [ { $call: { Name: 'X', With: {}, Into: 'answer' } } ] };
+			let run = jsonproc.Execute( process_document, jsonproc.Start( process_document, {} ) );
+			run = jsonproc.Resume( process_document, run, 42, null );
+			assert.strictEqual( run.Status, 'ready' );
+			assert.strictEqual( run.State.answer, 42 );
+		} );
+
+		it( 'should report a reserved code from the host as StepFailed, which a $try catches', () =>
+		{
+			// ***The host is outside the process and cannot declare it broken.*** A reserved
+			// code from Resume() is kept out of the run the way $throw keeps one out, but the
+			// failure is still the host's to report, so it arrives as an ordinary failure with
+			// the host's message. It used to arrive as the reserved code, past every $try.
+			let process_document = {
+				Name: 'A',
+				Steps: [ { $try: { Do: [ { $call: { Name: 'X', With: {} } } ], As: 'error', Catch: [ { $do: { caught: '$error' } } ] } } ],
+			};
+			let run = jsonproc.Execute( process_document, jsonproc.Start( process_document, {} ) );
+			run = jsonproc.Execute( process_document, jsonproc.Resume( process_document, run, undefined, { Code: 'BadProcess', Message: 'card service down' } ) );
+			assert.strictEqual( run.Status, 'done' );
+			assert.strictEqual( run.State.caught.Code, 'StepFailed' );
+			assert.strictEqual( run.State.caught.Message, 'card service down' );
 		} );
 
 		it( 'should not modify the run it was given', () =>

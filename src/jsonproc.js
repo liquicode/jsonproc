@@ -51,6 +51,16 @@ function NewJsonproc( RuntimeSettings = {} )
 	Runtime.jsongin = RuntimeSettings.jsongin;
 	if ( Runtime.jsongin === null ) { Runtime.jsongin = require( '@liquicode/jsongin' ); }
 
+	// ***A runtime with no engine is refused here, where the mistake is made.*** In a browser
+	// the bundle reads the jsongin global when it loads, so a page which loads this bundle first
+	// has none - and the runtime used to build without complaint and throw a TypeError from the
+	// first Start(). "Nothing throws" is the rule for the four run functions; building a runtime
+	// which cannot run anything is not one of them.
+	if ( ( Runtime.jsongin === null ) || ( typeof Runtime.jsongin !== 'object' ) || ( typeof Runtime.jsongin.Query !== 'function' ) )
+	{
+		throw new Error( `jsonproc needs the jsongin engine and has none. In a browser, load jsongin.min.js before jsonproc.min.js.` );
+	}
+
 	//---------------------------------------------------------------------
 	// OpLog
 	//

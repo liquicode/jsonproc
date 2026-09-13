@@ -50,6 +50,9 @@ module.exports = function ( jsonproc )
 	// every line below reads the way it did while the runtime lived inside jsongin itself.
 	const jsongin = jsonproc.jsongin;
 
+	// Readies a Check: refuses one which cannot run, and fixes $$NOW to the run's instant.
+	const CHECK = require( '../../jsonproc/Check' )( jsonproc );
+
 
 	let operator =
 	{
@@ -69,8 +72,8 @@ module.exports = function ( jsonproc )
 		// the state alone, so being re-entered is not different from being reached, and the
 		// Reentry the runtime offers is not read.
 		//
-		// The Scope is declared and not used, for the reason given in when.js: Query() takes
-		// no scope, and every step operator has the same signature.
+		// The Scope is read for the run's $$NOW alone, for the reason given in when.js: Query()
+		// takes no scope, so the instant is written into the Check instead.
 		Step: function ( State, Args, Scope, Position )
 		{
 			// ***These are faults in the process document, not in the state it is running
@@ -84,10 +87,9 @@ module.exports = function ( jsonproc )
 				return error;
 			}
 
-			if ( jsongin.ShortType( Args.Check ) !== 'o' )
-			{
-				throw bad_process( `$while requires a Check query.` );
-			}
+			// A Check which is missing, or which jsongin refuses, is refused as BadProcess, and
+			// the run's $$NOW is written into it. See src/jsonproc/Check.js.
+			let check = CHECK.Prepare( '$while', Args.Check, Scope );
 			if ( jsongin.ShortType( Args.Do ) !== 'a' )
 			{
 				throw bad_process( `$while requires a Do array of steps.` );
@@ -100,7 +102,7 @@ module.exports = function ( jsonproc )
 				throw bad_process( `$while requires at least one step in Do. A loop with an empty body cannot end.` );
 			}
 
-			let matched = jsongin.Query( State, Args.Check );
+			let matched = jsongin.Query( State, check );
 			if ( matched === false ) { return { Action: 'next' }; }
 
 			return { Action: 'enter', Branch: 'Do' };

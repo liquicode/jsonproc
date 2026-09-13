@@ -130,7 +130,9 @@ failing.Error.Cursor	// returns [ 2 ]
 ```
 
 The failure may be an `Error`, a string, or a document `{ Code, Message }` to choose the code.
-Any fourth argument other than `undefined` is a failure, `null` included.
+A fourth argument of `undefined` or `null` means the work succeeded.
+The host may not report a [code which is never caught](#failure): `{ Code: 'BadProcess' }`
+  arrives as `StepFailed`, with its message kept, so a `$try` can still catch it.
 `Resume()` on a run which is not `waiting` fails with `ResumeNotWaiting`.
 
 
@@ -153,9 +155,9 @@ let stamped_matches = ( stamped_run.State.at.getTime() === started_at );
 stamped_matches		// returns true
 ```
 
-> ***A `Check` is a query, and a query has no variables.***
-  Inside a `Check`, even within `$expr`, `$$NOW` is the time the check runs, not the run's
-  instant. Copy it into the state with `$do` first and check the field.
+> ***`$$NOW` in a `Check` is the run's instant too.***
+  A `Check` is a query, and a query takes no variables, so jsonproc writes the run's instant
+  into the `Check` wherever `$$NOW` appears inside `$expr`.
 
 
 ## Stepping
@@ -211,18 +213,33 @@ out_of_budget.Error.Code	// returns 'StepLimitExceeded'
 A failure is a run with `Status: 'failed'` and an `Error` of `{ Code, Message, Cursor }`.
 The run keeps the state it had reached, so you can see what happened before the failure.
 
+***A failure's code says whether a [`$try`](./Step-Operators.md#$try) may catch it.***
+
+- ***A mistake in the process, or in how it is being run, is never caught.*** A step missing an
+  argument is wrong on every input, so a `$try` which caught it would report every run as a
+  handled failure and nobody would learn the process is broken. The run stops instead.
+- ***A failure of the work is caught.*** A declined card, a field the data does not have, or a
+  failed call is what a `$try` is for, and its `Catch` steps decide what happens next.
+
+Never caught:
+
 | Code | Raised when |
 |---|---|
-| `BadProcess` | the process is not a document with a `Steps` array; a step is not a document with exactly one key; `$while`, `$forEach` or `$try` has missing or malformed arguments |
+| `BadProcess` | the process is not a document with a `Steps` array; a step is not a document with exactly one key; a step's argument is the wrong type; a step is missing an argument or has a malformed one, such as a `$when` with no `Check`, a `Check` jsongin refuses, or a `$call` with no `Name` |
 | `BadRun` | the run is not shaped as a run, belongs to a process with a different `Name`, or `Start()` was given an `Input` which is not a document |
 | `NoSuchStep` | the cursor addresses a step which is not there |
 | `UnknownOperator` | a step names an operator which is not registered |
-| `StepFailed` | an expression or query threw; an operator was given the wrong type of argument; `$when` has no `Check` or `$call` has no `Name`; the host reported a failed call without a code |
 | `ResumeNotWaiting` | `Resume()` was called on a run which is not waiting |
 | `StepLimitExceeded` | `Execute()` reached `MaxSteps` |
-| `Thrown` | a [`$throw`](./Step-Operators.md#$throw) with no code, and nothing caught it |
 
-A `$throw`, or a host's failed call, may also use a code of its own.
+Caught by a `$try`:
+
+| Code | Raised when |
+|---|---|
+| `StepFailed` | an expression or query threw while the step ran, such as a `$forEach` whose `In` is not an array; or the host reported a failed call without a code, or with one of the codes above |
+| `Thrown` | a [`$throw`](./Step-Operators.md#$throw) with no code |
+
+A `$throw`, or a host's failed call, may also use a code of its own, and a `$try` catches it.
 
 ```js
 const wrong = { Name: 'Wrong', Steps: [ { $nosuchthing: 1 } ] };

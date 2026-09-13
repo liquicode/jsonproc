@@ -19,7 +19,9 @@ A process is a document with a `Steps` array, and each step is one document with
 | [`$return`](#$return)      | `{ $return: expression }`                                          |
 
 These are jsonproc's own operators, not MongoDB's, and their argument names are PascalCase.
-An argument of the wrong type, such as `{ $do: [ ... ] }`, fails the step with `StepFailed`.
+An argument of the wrong type, such as `{ $do: [ ... ] }`, or a missing required argument, fails
+  the run with `BadProcess`, which a `$try` does not catch. See
+  [Failure](./Process.md#failure).
 
 
 <a id="$do"></a>$do
@@ -118,18 +120,17 @@ let comparison = jsonproc.Execute( compared, jsonproc.Start( compared, { a: 9, b
 comparison.State.bigger		// returns 'a'
 ```
 
-`Check` is required; without it the step fails with `StepFailed`.
+`Check` is required. A missing `Check`, or one jsongin refuses, such as `{ n: { $nope: 1 } }`,
+  fails the run with `BadProcess`.
 `Then` and `Else` are optional. A missing or empty branch does nothing, and the run moves to the
   next step.
 
 While a branch runs, the cursor records the position inside it: `[ 0, 'Then', 1 ]` is the second
   step of the `Then` branch of step 0.
 
-***A query has no variables.***
-[`Query()`](http://jsongin.liquicode.com/#/guides/jsongin/Query.md) takes no scope, so a
-  `$$name` is not visible in `Check`, even within `$expr`, and `$$NOW` there is the current time
-  rather than the run's.
-Compute the value into the state with `$do` first, and check the field.
+***`$$NOW` in a `Check` is the run's instant.***
+[`Query()`](http://jsongin.liquicode.com/#/guides/jsongin/Query.md) takes no variables, so
+  jsonproc writes the run's instant into the `Check` wherever `$$NOW` appears inside `$expr`.
 
 
 <a id="$while"></a>$while
@@ -504,7 +505,7 @@ resumed.Result		// returns { paid: true }
 
 | **Argument** | **Meaning**                                                              |
 |--------------|--------------------------------------------------------------------------|
-| `Name`       | Required. What you are being asked to do. Without it the step fails with `StepFailed`. |
+| `Name`       | Required. What you are being asked to do. Without it the run fails with `BadProcess`. |
 | `With`       | Optional. An expression document, evaluated when the step runs, so `Waiting.With` holds values. Defaults to `{}`. |
 | `Into`       | Optional. The field where `Resume()` writes the result. A result of `undefined` removes the field. |
 

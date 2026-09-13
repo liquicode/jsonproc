@@ -46,9 +46,13 @@ module.exports = function ( jsonproc )
 		// ran, not the one an expression would compute against a state which has moved on.
 		Step: function ( State, Args, Scope )
 		{
+			// A fault in the process document rather than in the state, so it is BadProcess and
+			// a $try does not catch it. It was StepFailed until 2026-09-13.
 			if ( jsongin.ShortType( Args.Name ) !== 's' )
 			{
-				throw new Error( `$call requires a Name.` );
+				let error = new Error( `$call requires a Name.` );
+				error.Code = 'BadProcess';
+				throw error;
 			}
 
 			let scope = Scope.ForDocument( State );

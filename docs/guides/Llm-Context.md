@@ -72,8 +72,7 @@ A query can hold `$expr` when you need to compare two fields:
 
 System variables in expressions include `$$NOW` for the time the run started, `$$ROOT` and
 `$$CURRENT` for the whole state, and `$$REMOVE`, which takes a field off the state when written
-to it. **A `Check` cannot see variables**: inside a query, `$$NOW` is the current time instead.
-Copy a value into the state with `$do` before checking it.
+to it. In a `Check`, `$$NOW` inside `$expr` is also the time the run started.
 
 
 ## The step operators

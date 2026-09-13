@@ -37,6 +37,9 @@ module.exports = function ( jsonproc )
 	// every line below reads the way it did while the runtime lived inside jsongin itself.
 	const jsongin = jsonproc.jsongin;
 
+	// Readies a Check: refuses one which cannot run, and fixes $$NOW to the run's instant.
+	const CHECK = require( '../../jsonproc/Check' )( jsonproc );
+
 
 	let operator =
 	{
@@ -50,17 +53,14 @@ module.exports = function ( jsonproc )
 		// the engine to push the branch onto the cursor, which is what makes a run inside a
 		// branch storable: the position is data, not a call stack.
 		//
-		// The Scope is declared and not used, because Query() takes no scope. It stays in the
-		// signature so that every step operator has the same one, and so that the day a query
-		// can carry a scope this file is where it starts.
+		// Query() takes no scope, so the Scope is read for one thing only: the run's $$NOW,
+		// which src/jsonproc/Check.js writes into the Check. A Check which is missing, or
+		// which jsongin refuses, is refused there as BadProcess.
 		Step: function ( State, Args, Scope )
 		{
-			if ( jsongin.ShortType( Args.Check ) !== 'o' )
-			{
-				throw new Error( `$when requires a Check query.` );
-			}
+			let check = CHECK.Prepare( '$when', Args.Check, Scope );
 
-			let matched = jsongin.Query( State, Args.Check );
+			let matched = jsongin.Query( State, check );
 			let branch = matched ? 'Then' : 'Else';
 
 			// A branch which is not there, and an empty one, both mean the same thing: there

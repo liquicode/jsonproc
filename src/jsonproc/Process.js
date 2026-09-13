@@ -576,12 +576,15 @@ module.exports = function ( jsonproc )
 			}
 
 			// The same argument type check the aggregation and query dispatchers make.
+			// ***An argument of the wrong type is wrong on every input***, so it is a fault in the
+			// process and BadProcess, like every other one. It was StepFailed until 2026-09-13,
+			// which let a $try catch an author's mistake as though the run had failed.
 			if ( jsongin.ShortType( operator.ArgTypes ) === 's' )
 			{
 				let argument_type = jsongin.ShortType( step[ key ] );
 				if ( operator.ArgTypes.includes( argument_type ) === false )
 				{
-					return raise( Process, Run, 'StepFailed',
+					return failed_run( Process, Run, 'BadProcess',
 						`Step operator [${key}] does not take an argument of type [${argument_type}]. It takes [${operator.ArgTypes}].`, cursor );
 				}
 			}
@@ -730,7 +733,10 @@ module.exports = function ( jsonproc )
 			}
 
 			// The host reporting a failure of the call it was asked to make.
-			if ( typeof Error_ !== 'undefined' )
+			//
+			// ***null is no failure, the same as undefined.*** A host which passes null for "no
+			// error" is ordinary, and reading it as a failure dropped the result it came with.
+			if ( ( typeof Error_ !== 'undefined' ) && ( Error_ !== null ) )
 			{
 				let code = 'StepFailed';
 				let message = '';
@@ -742,6 +748,12 @@ module.exports = function ( jsonproc )
 				}
 				else if ( st_error === 'e' ) { message = Error_.message; }
 				else { message = String( Error_ ); }
+
+				// ***The host is outside the process and cannot declare it broken.*** A reserved
+				// code - one a $try refuses to catch - is kept out of the run the way $throw keeps
+				// one out, but the failure is still the host's to report, so it arrives as
+				// StepFailed with the host's message.
+				if ( UNCATCHABLE.includes( code ) === true ) { code = 'StepFailed'; }
 
 				// ***A failed call is the failure a $try most exists for***, so it takes the
 				// same route a step's own failure takes rather than halting on the spot.

@@ -8,11 +8,26 @@
 v0.2.0 (current)
 ---------------------------------------------------------------------
 
-***Built on `@liquicode/jsongin` 0.2.0.*** The runtime itself is unchanged, but the checks in
-  `$when` and `$while` are jsongin queries, so they follow jsongin's new rules: an object whose
-  first key is an operator holds only operators, and one whose first key is a field name is a
-  value. Read [jsongin's history](https://github.com/liquicode/jsongin/blob/main/history.md) for
-  the details.
+***Built on `@liquicode/jsongin` 0.2.0.*** The checks in `$when` and `$while` are jsongin
+  queries, so they follow jsongin's new rules: an object whose first key is an operator holds
+  only operators, and one whose first key is a field name is a value. Read
+  [jsongin's history](https://github.com/liquicode/jsongin/blob/main/history.md) for the details.
+
+***A mistake in the process is never caught by a `$try`.*** Every fault in the process document
+  now fails the run with `BadProcess`, as `$while`, `$forEach` and `$try` already did.
+
+- `$when` with no `Check`, `$call` with no `Name`, and a step whose argument is the wrong type
+  fail with `BadProcess`. *Was: `StepFailed`, so a `$try` around one caught the mistake and ran
+  its `Catch` steps as though the work had failed.*
+- A `Check` which jsongin refuses, such as `{ n: { $nope: 1 } }`, fails the run with `BadProcess`.
+- ***`$$NOW` in a `Check` is the run's instant.*** *Was: the time the check ran.*
+- ***`Resume()` reads a `null` fourth argument as success.*** *Was: a failure with the message
+  `'null'`, which dropped the result.*
+- ***`Resume()` reports a reserved code from the host as `StepFailed`***, keeping the host's
+  message, so a `$try` can catch it. *Was: the reserved code, which no `$try` catches.*
+- ***The browser bundle loaded before jsongin throws at once***, naming what to load. *Was: loaded
+  quietly, and the first `Start()` threw a `TypeError`.*
+- The Process guide explains which failure codes a `$try` catches, and why.
 
 - ***ESM named imports and TypeScript declarations.*** The package has an `exports` map, an ESM
   entry point `src/jsonproc.mjs`, and `types/jsonproc.d.ts`.

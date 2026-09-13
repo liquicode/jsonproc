@@ -34,7 +34,7 @@ flagged.State		// returns { n: 1, checked: true }
 | **Field**  | **Meaning**                                                                   |
 |------------|--------------------------------------------------------------------------------|
 | `Step`     | Required. The function which runs the step.                                   |
-| `ArgTypes` | Optional. A string of [`ShortType`](http://jsongin.liquicode.com/#/guides/jsongin/ShortType.md) letters. A step whose argument has another type fails with `StepFailed` before `Step` is called. |
+| `ArgTypes` | Optional. A string of [`ShortType`](http://jsongin.liquicode.com/#/guides/jsongin/ShortType.md) letters. A step whose argument has another type fails the run with `BadProcess` before `Step` is called. |
 | `Repeats`  | Optional. `true` makes the operator a loop; see [Loops](#loops).              |
 | `Catches`  | Optional. Makes the operator a handler; see [Handlers](#handlers).            |
 
